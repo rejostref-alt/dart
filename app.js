@@ -3,7 +3,7 @@
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
   const store = { get(k, d) { try { const v = localStorage.getItem('dart.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
                   set(k, v) { try { localStorage.setItem('dart.' + k, JSON.stringify(v)); } catch {} } };
-  const VERSION = '6'; // przy każdej aktualizacji podbić też CACHE w sw.js
+  const VERSION = '7'; // przy każdej aktualizacji podbić też CACHE w sw.js
   $$('.ver').forEach(e => e.textContent = 'wersja ' + VERSION);
   const GEAR = $('[data-settings] svg').outerHTML;
   $$('[data-settings]').forEach(b => { b.innerHTML = GEAR; b.onclick = openSettings; });
@@ -481,7 +481,7 @@
     calMode = ses.calMode || 'host';
     if (ses.screen === 'scr-new') return wizard(ses.step || 0);
     if (ses.screen === 'scr-remote' || calMode === 'remote') {
-      home(); $('#home-remote').textContent = '📷 Połączenie przerwane – dołącz ponownie jako druga kamera'; return;
+      home(); $('#home-remote').classList.add('warn'); $('#home-remote-sub').textContent = 'Połączenie przerwane – dotknij, aby dołączyć ponownie'; return;
     }
     if ((ses.screen === 'scr-play' || ses.screen === 'scr-camera') && saved) {
       match = Games.Match(saved.kind, saved.players, saved.opts, saved);

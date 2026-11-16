@@ -33,6 +33,40 @@ const Vision = (() => {
     video.srcObject = stream; await video.play();
     return { w: video.videoWidth, h: video.videoHeight };
   }
+  // ---------- blokada ostrości / ekspozycji / balansu bieli ----------
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  function track() { return stream ? stream.getVideoTracks()[0] : null; }
+  async function tryApply(t, c) { try { await t.applyConstraints({ advanced: [c] }); return true; } catch { return false; } }
+  async function unlockCamera() { // na czas kalibracji: autofokus ciągły
+    const t = track(); if (!t || !t.getCapabilities) return;
+    const caps = t.getCapabilities();
+    if ((caps.focusMode || []).includes('continuous')) await tryApply(t, { focusMode: 'continuous' });
+    if ((caps.exposureMode || []).includes('continuous')) await tryApply(t, { exposureMode: 'continuous' });
+    if ((caps.whiteBalanceMode || []).includes('continuous')) await tryApply(t, { whiteBalanceMode: 'continuous' });
+  }
+  // center: środek tarczy w pikselach wideo – tam ustawiamy ostrość przed zablokowaniem
+  async function lockCamera(center) {
+    const res = { focus: 'brak', exposure: false, wb: false };
+    const t = track(); if (!t || !t.getCapabilities) return res;
+    const caps = t.getCapabilities();
+    const fm = caps.focusMode || [];
+    if (center && caps.pointsOfInterest && video.videoWidth) {
+      await tryApply(t, { pointsOfInterest: [{ x: center[0] / video.videoWidth, y: center[1] / video.videoHeight }] });
+    }
+    if (fm.includes('single-shot')) { await tryApply(t, { focusMode: 'single-shot' }); await sleep(1500); }
+    else await sleep(800);
+    const st = t.getSettings ? t.getSettings() : {};
+    if (fm.includes('manual') && caps.focusDistance && st.focusDistance != null) {
+      if (await tryApply(t, { focusMode: 'manual', focusDistance: st.focusDistance })) res.focus = 'zablokowana';
+    }
+    if (res.focus === 'brak' && fm.includes('single-shot')) res.focus = 'ustawiona raz'; // single-shot trzyma ostrość do kolejnego wywołania
+    const em = caps.exposureMode || [];
+    if (em.includes('manual') && st.exposureTime != null) res.exposure = await tryApply(t, { exposureMode: 'manual', exposureTime: st.exposureTime });
+    const wm = caps.whiteBalanceMode || [];
+    if (wm.includes('manual') && st.colorTemperature != null) res.wb = await tryApply(t, { whiteBalanceMode: 'manual', colorTemperature: st.colorTemperature });
+    return res;
+  }
+
   function useVideoFile(el, file) { // tryb testowy: nagranie zamiast kamery
     video = el; if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     video.srcObject = null; video.src = URL.createObjectURL(file); video.loop = true; video.muted = true;
@@ -146,5 +180,5 @@ const Vision = (() => {
   function stop() { if (timer) clearInterval(timer); timer = null; }
   function resetReference(asEmpty) { if (!ctx) return; ref = grab(); prev = ref; if (asEmpty) empty = ref; state = 'idle'; }
 
-  return { homography, apply, startCamera, useVideoFile, setCalibration, start, stop, resetReference, cfg, get video() { return video; } };
+  return { homography, apply, startCamera, useVideoFile, lockCamera, unlockCamera, setCalibration, start, stop, resetReference, cfg, get video() { return video; } };
 })();

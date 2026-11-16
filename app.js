@@ -81,6 +81,7 @@
     show('scr-camera'); $('#cal-msg').textContent = 'Uruchamiam kamerę…';
     try {
       const d = await Vision.startCamera(video); vw = d.w; vh = d.h; cameraOn = true;
+      await Vision.unlockCamera(); // w trakcie kalibracji autofokus działa normalnie
       const saved = store.get('cal', null);
       calPts = saved && saved.vw === vw && saved.vh === vh ? saved.pts : [];
       recomputeH(); calMsg(); requestWake(); calLoop();
@@ -91,7 +92,16 @@
   $('#cal-file').onchange = async (e) => { const f = e.target.files[0]; if (!f) return; const d = await Vision.useVideoFile(video, f); vw = d.w; vh = d.h; cameraOn = true; calPts = []; recomputeH(); calMsg(); calLoop(); };
   $('#cal-reset').onclick = () => { calPts = []; recomputeH(); calMsg(); };
   $('#cal-back').onclick = () => { Vision.stop(); show('scr-setup'); };
-  $('#cal-ok').onclick = () => { store.set('cal', { vw, vh, pts: calPts }); Vision.setCalibration(calPts, vw, vh); startMatch(true); };
+  $('#cal-ok').onclick = async () => {
+    store.set('cal', { vw, vh, pts: calPts });
+    $('#cal-ok').disabled = true; $('#cal-msg').innerHTML = 'Ustawiam ostrość na środek tarczy i ją blokuję… nie ruszaj telefonu.';
+    const lock = await Vision.lockCamera(Vision.apply(Hb2i, 0, 0));
+    const txt = lock.focus === 'zablokowana' ? '🔒 Ostrość zablokowana' : lock.focus === 'ustawiona raz' ? '🔒 Ostrość ustawiona (bez autofokusu)' : '⚠ Telefon nie pozwala zablokować ostrości';
+    $('#cam-lock').textContent = txt + (lock.exposure ? ' · ekspozycja ✓' : '') + (lock.wb ? ' · balans bieli ✓' : '');
+    $('#cal-ok').disabled = false;
+    Vision.setCalibration(calPts, vw, vh); startMatch(true);
+    if (lock.focus === 'brak') setStatus('Ten telefon nie pozwala aplikacji zablokować ostrości – unikaj stania przed kamerą przy wyjmowaniu lotek', 'take');
+  };
 
   // ---------- 3. gra ----------
   let match = null, useCam = false, turnDarts = [], editSlot = -1, voice = store.get('voice', true);

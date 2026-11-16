@@ -3,8 +3,7 @@
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
   const store = { get(k, d) { try { const v = localStorage.getItem('dart.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
                   set(k, v) { try { localStorage.setItem('dart.' + k, JSON.stringify(v)); } catch {} } };
-  const VERSION = '9'; // przy każdej aktualizacji podbić też CACHE w sw.js
-  $$('.ver').forEach(e => e.textContent = 'wersja ' + VERSION);
+  const VERSION = '10'; // przy każdej aktualizacji podbić też CACHE w sw.js
   const GEAR = $('[data-settings] svg').outerHTML;
   $$('[data-settings]').forEach(b => { b.innerHTML = GEAR; b.onclick = openSettings; });
   let screen = 'scr-home';
@@ -12,34 +11,66 @@
   // zapis stanu na bieżąco: odświeżenie strony (np. przypadkowe przeciągnięcie) wraca w to samo miejsce
   function persist() {
     store.set('cfg', cfg); store.set('players', players);
-    store.set('session', { screen, step, useCam, calMode });
+    store.set('session', { screen, step, useCam, calMode, savedId });
     if (match && !match.state.done && (screen === 'scr-play' || screen === 'scr-camera')) store.set('match', match.dump());
     else if (screen !== 'scr-camera') localStorage.removeItem('dart.match');
   }
   const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const lbl = (x) => x === 'Pudło' ? t('aMiss') : x; // etykieta pudła w języku aplikacji
+  document.addEventListener('pointerdown', () => Caller.unlock(), { once: true }); // dźwięk wolno włączyć dopiero po dotknięciu
 
   // ---------- ustawienia (tylko pod ikoną ⚙) ----------
-  const settings = Object.assign({ voice: true, lock: true, sens: 50 }, store.get('settings', {}));
-  const applySettings = () => { Vision.cfg.diffThr = 78 - settings.sens; store.set('settings', settings); };
+  const settings = Object.assign({ voice: true, lock: true, sens: 50, crowd: true, each: false, caller: '', lang: I18N.lang }, store.get('settings', {}));
+  const applySettings = () => {
+    Vision.cfg.diffThr = 78 - settings.sens; I18N.lang = settings.lang;
+    Caller.set({ on: settings.voice, crowd: settings.crowd, voiceName: settings.caller });
+    store.set('settings', settings);
+  };
+  function sensLabel() { return t(settings.sens >= 56 ? 'sensVHigh' : settings.sens >= 44 ? 'sensNorm' : settings.sens >= 32 ? 'sensLow' : 'sensVLow'); }
+  function fillVoices() {
+    const vs = Caller.voicesFor(I18N.speechLang());
+    $('#s-caller').innerHTML = `<option value="">${esc(t('sAuto'))}</option>` + vs.map(v => `<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('');
+    $('#s-caller').value = vs.some(v => v.name === settings.caller) ? settings.caller : '';
+  }
   function openSettings() {
-    $('#s-voice').checked = settings.voice; $('#s-lock').checked = settings.lock; $('#s-sens').value = settings.sens;
-    $('#s-sens-v').textContent = sensLabel();
+    $$('#s-lang button').forEach(b => b.classList.toggle('on', b.dataset.v === settings.lang));
+    $('#s-voice').checked = settings.voice; $('#s-crowd').checked = settings.crowd; $('#s-each').checked = settings.each;
+    $('#s-lock').checked = settings.lock; $('#s-sens').value = settings.sens; $('#s-sens-v').textContent = sensLabel();
+    $('#s-caller-row').hidden = !settings.voice; fillVoices();
     $('#s-bg').hidden = screen !== 'scr-play' || !useCam;
     $('#dlg-settings').showModal();
   }
-  $('#s-voice').onchange = (e) => { settings.voice = e.target.checked; applySettings(); };
+  if (window.speechSynthesis) speechSynthesis.addEventListener && speechSynthesis.addEventListener('voiceschanged', () => { if ($('#dlg-settings').open) fillVoices(); });
+  $('#s-lang').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; settings.lang = b.dataset.v; applySettings(); relabel(); openSettings(); };
+  $('#s-voice').onchange = (e) => { settings.voice = e.target.checked; $('#s-caller-row').hidden = !settings.voice; applySettings(); };
+  $('#s-caller').onchange = (e) => { settings.caller = e.target.value; applySettings(); Caller.test(); };
+  $('#s-test').onclick = () => Caller.test();
+  $('#s-crowd').onchange = (e) => { settings.crowd = e.target.checked; applySettings(); };
+  $('#s-each').onchange = (e) => { settings.each = e.target.checked; applySettings(); };
   $('#s-lock').onchange = (e) => { settings.lock = e.target.checked; applySettings(); };
-  function sensLabel() { return settings.sens >= 56 ? '· bardzo wysoka' : settings.sens >= 44 ? '· normalna' : settings.sens >= 32 ? '· niższa' : '· niska (jasne, migające światło)'; }
   $('#s-sens').oninput = (e) => { settings.sens = +e.target.value; $('#s-sens-v').textContent = sensLabel(); applySettings(); };
-  $('#s-bg').onclick = () => { Vision.resetReference(true); $('#dlg-settings').close(); setStatus('Zapamiętano tło tarczy'); };
-  $('#s-reset').onclick = () => { ['players', 'cfg', 'cal', 'recent', 'settings'].forEach(k => localStorage.removeItem('dart.' + k)); location.reload(); };
+  $('#s-bg').onclick = () => { Vision.resetReference(true); $('#dlg-settings').close(); setStatus(t('bgSaved')); };
+  $('#s-reset').onclick = () => { ['players', 'cfg', 'cal', 'recent', 'settings', 'saved', 'match', 'session'].forEach(k => localStorage.removeItem('dart.' + k)); location.reload(); };
   $$('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
   applySettings();
 
+  // zmiana języka: teksty stałe + odświeżenie bieżącego ekranu
+  function relabel() {
+    I18N.apply(); $$('.ver').forEach(e => e.textContent = t('version', { v: VERSION }));
+    $('#recent').dataset.label = t('recentPlayed');
+    kpInline && kpInline.relabel(); kpDlg && kpDlg.relabel();
+    if (screen === 'scr-home') home();
+    if (screen === 'scr-new') renderWizard();
+    if (screen === 'scr-camera' && cameraOn) calMsg();
+    if (screen === 'scr-play' && match) { $('#g-title').textContent = match.title(); render(); if (!match.state.awaitNext && !match.state.done) setStatus(t('throwNow', { n: curName() })); }
+    if (screen === 'scr-remote') { $('#r-conn').textContent = t(Pair.connected() ? 'connected' : 'disconnected'); }
+  }
+
   // ---------- konfiguracja gry ----------
   const cfg = Object.assign({ kind: 'x01', start: 501, legs: 1, sets: 1, doubleOut: true, doubleIn: false, multSkip: false, shRounds: 7, hiRounds: 10, cams: 'one' }, store.get('cfg', {}));
-  let players = store.get('players', ['Gracz 1', 'Gracz 2']);
+  let players = store.get('players', [t('playerN', { n: 1 }), t('playerN', { n: 2 })]);
   let recent = store.get('recent', []);
+  const isDefaultName = (p) => /^(Gracz|Player) \d+$/.test(p);
   function gameOpts() {
     if (cfg.kind === 'x01') return { start: cfg.start, legs: cfg.legs, sets: cfg.sets, doubleOut: cfg.doubleOut, doubleIn: cfg.doubleIn };
     if (cfg.kind === 'atc') return { multSkip: cfg.multSkip };
@@ -47,25 +78,59 @@
     if (cfg.kind === 'high') return { rounds: cfg.hiRounds };
     return {};
   }
-  function gameLabel() {
-    const n = { x01: String(cfg.start), cricket: 'Cricket', atc: 'Po kolei', shanghai: 'Shanghai', high: 'High Score' }[cfg.kind];
-    return n + ' · ' + players.join(' vs ');
-  }
+  const kindName = (k, start) => ({ x01: String(start), cricket: 'Cricket', atc: t('gAtc'), shanghai: 'Shanghai', high: 'High Score' }[k]);
+  function gameLabel() { return kindName(cfg.kind, cfg.start) + ' · ' + players.join(' vs '); }
   function saveCfg() {
-    players = players.map(p => p.trim() || 'Gracz');
+    players = players.map(p => p.trim() || t('player'));
     recent = [...new Set([...players, ...recent])].slice(0, 12);
     store.set('cfg', cfg); store.set('players', players); store.set('recent', recent);
   }
 
   // ---------- START ----------
   function home() {
-    Vision.stop(); match = null; show('scr-home');
+    Vision.stop(); match = null; savedId = null; show('scr-home');
     const has = store.get('cfg', null);
-    $('#home-again').hidden = !has; if (has) $('#home-again').textContent = '↻ Zagraj ponownie: ' + gameLabel();
+    $('#home-again').hidden = !has; if (has) $('#home-again').textContent = t('playAgain', { x: gameLabel() });
+    const saved = store.get('saved', []);
+    $('#home-saved').hidden = !saved.length; $('#home-saved-sub').textContent = t('savedTileSub', { n: saved.length });
+    $('.home').classList.toggle('has-saved', saved.length > 0);
   }
   $('#home-new').onclick = () => wizard(0);
   $('#home-again').onclick = () => { if (cfg.cams === 'two' && !Pair.connected()) return wizard(2); launch(); };
   $('#home-remote').onclick = joinAsRemote;
+  $('#home-saved').onclick = openSaved;
+
+  // ---------- ZAPISANE GRY ----------
+  let savedId = null; // id zapisu, z którego wznowiono bieżącą grę (ponowny zapis nadpisuje go)
+  function saveGame() {
+    const list = store.get('saved', []), id = savedId || Date.now().toString(36);
+    const entry = { id, ts: Date.now(), cfg: Object.assign({}, cfg), players: players.slice(), useCam, dump: match.dump(), header: match.header(),
+      rows: match.view().map(r => ({ name: r.name, big: r.big })) };
+    const i = list.findIndex(e => e.id === id); if (i >= 0) list.splice(i, 1);
+    list.unshift(entry); store.set('saved', list.slice(0, 20));
+  }
+  function openSaved() {
+    const list = store.get('saved', []);
+    const fmt = (ts) => new Date(ts).toLocaleString(settings.lang === 'pl' ? 'pl-PL' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    $('#saved-list').innerHTML = list.length ? list.map(e => `<div class="saved-row">
+        <div class="saved-info"><b>${esc(kindName(e.cfg.kind, e.cfg.start))} · ${e.rows.map(r => `${esc(r.name)} <span class="sc">${r.big}</span>`).join(' · ')}</b>
+        <small class="muted">${esc(e.header)} · ${fmt(e.ts)}${e.useCam ? ' · 📷' : ''}</small></div>
+        <button class="btn primary" data-play="${e.id}">${esc(t('resume'))}</button><button class="icon-btn" data-del="${e.id}" aria-label="${esc(t('del'))}">🗑</button></div>`).join('')
+      : `<p class="muted center">${esc(t('savedEmpty'))}</p>`;
+    $('#dlg-saved').showModal();
+  }
+  $('#saved-list').onclick = (e) => {
+    const del = e.target.closest('[data-del]'), play = e.target.closest('[data-play]');
+    if (del) { store.set('saved', store.get('saved', []).filter(x => x.id !== del.dataset.del)); openSaved(); home(); return; }
+    if (!play) return;
+    const entry = store.get('saved', []).find(x => x.id === play.dataset.play); if (!entry) return;
+    $('#dlg-saved').close();
+    Object.assign(cfg, entry.cfg); players = entry.players.slice(); savedId = entry.id;
+    match = Games.Match(entry.dump.kind, entry.dump.players, entry.dump.opts, entry.dump);
+    if (entry.useCam) return resumeCamera();
+    startMatch(false, true); setStatus(t('resumed', { n: match.state.players[match.state.cur].name }));
+  };
+  function dropSaved() { if (savedId) { store.set('saved', store.get('saved', []).filter(x => x.id !== savedId)); savedId = null; } }
 
   // ---------- KREATOR ----------
   let step = 0;
@@ -74,7 +139,7 @@
     $$('.step').forEach(el => el.hidden = +el.dataset.step !== step);
     $$('#w-steps span').forEach((el, i) => el.classList.toggle('on', i <= step));
     const last = step === 2;
-    $('#w-next').textContent = !last ? 'Dalej' : cfg.cams === 'none' ? 'Start gry' : 'Dalej: kalibracja kamery';
+    $('#w-next').textContent = !last ? t('next') : cfg.cams === 'none' ? t('startGame') : t('nextCalib');
     $('#w-next').disabled = last && cfg.cams === 'two' && !Pair.connected();
     if (step === 0) renderGame(); if (step === 1) renderPlayers(); if (step === 2) renderCams();
   }
@@ -112,8 +177,8 @@
   // krok 2: gracze
   function renderPlayers() {
     $('#players').innerHTML = players.map((p, i) => `<div class="player-row"><span class="num">${i + 1}</span>
-      <input type="text" value="${esc(p)}" data-i="${i}" aria-label="Gracz ${i + 1}" enterkeyhint="next">
-      <button class="icon-btn" data-del="${i}" aria-label="Usuń gracza" ${players.length < 2 ? 'disabled' : ''}>✕</button></div>`).join('');
+      <input type="text" value="${esc(p)}" data-i="${i}" aria-label="${esc(t('playerN', { n: i + 1 }))}" enterkeyhint="next">
+      <button class="icon-btn" data-del="${i}" aria-label="${esc(t('removePlayer'))}" ${players.length < 2 ? 'disabled' : ''}>✕</button></div>`).join('');
     $('#players').classList.toggle('two-col', players.length > 4);
     const free = recent.filter(r => !players.includes(r)).slice(0, players.length > 4 ? 3 : 6);
     $('#recent').innerHTML = free.map(r => `<button class="chip" data-r="${esc(r)}">+ ${esc(r)}</button>`).join('');
@@ -122,11 +187,11 @@
   }
   $('#players').oninput = (e) => { if (e.target.dataset.i) { players[+e.target.dataset.i] = e.target.value; persist(); } };
   $('#players').onclick = (e) => { const d = e.target.closest('[data-del]'); if (d) { players.splice(+d.dataset.del, 1); renderPlayers(); } };
-  $('#players').onfocusin = (e) => { if (e.target.tagName === 'INPUT' && /^Gracz \d+$/.test(e.target.value)) e.target.select(); };
-  $('#add-player').onclick = () => { players.push('Gracz ' + (players.length + 1)); renderPlayers(); const ins = $$('#players input'); ins[ins.length - 1].focus(); };
+  $('#players').onfocusin = (e) => { if (e.target.tagName === 'INPUT' && isDefaultName(e.target.value)) e.target.select(); };
+  $('#add-player').onclick = () => { players.push(t('playerN', { n: players.length + 1 })); renderPlayers(); const ins = $$('#players input'); ins[ins.length - 1].focus(); };
   $('#recent').onclick = (e) => {
     const c = e.target.closest('[data-r]'); if (!c || players.length >= 8) return;
-    const i = players.findIndex(p => /^Gracz \d+$/.test(p));
+    const i = players.findIndex(isDefaultName);
     if (i >= 0) players[i] = c.dataset.r; else players.push(c.dataset.r);
     renderPlayers();
   };
@@ -139,20 +204,20 @@
   }
   $('#cam-choice').onclick = (e) => { const b = e.target.closest('button'); if (b) { cfg.cams = b.dataset.c; renderWizard(); } };
 
-  function launch() { saveCfg(); match = null; keepMatch = false; if (cfg.cams === 'none') return startMatch(false); openCamera(); }
+  function launch() { saveCfg(); match = null; savedId = null; keepMatch = false; if (cfg.cams === 'none') return startMatch(false); openCamera(); }
 
   // ---------- KALIBRACJA ----------
   const video = $('#video'), ov = $('#overlay'), octx = ov.getContext('2d');
   let calPts = [], vw = 0, vh = 0, Hb2i = null, cameraOn = false, dragIdx = -1, calMode = 'host';
-  const CAL_TXT = ['środek pola 20 (góra)', 'środek pola 6 (prawo)', 'środek pola 3 (dół)', 'środek pola 11 (lewo)'];
+  const CAL_KEYS = ['cal20', 'cal6', 'cal3', 'cal11'];
 
   function fit(boxW, boxH) { const s = Math.min(boxW / vw, boxH / vh); return { s, ox: (boxW - vw * s) / 2, oy: (boxH - vh * s) / 2 }; }
   function toVideo(ev) { const r = ov.getBoundingClientRect(), f = fit(r.width, r.height); return [(ev.clientX - r.left - f.ox) / f.s, (ev.clientY - r.top - f.oy) / f.s]; }
   function calMsg() {
-    if (calPts.length < 4) $('#cal-msg').innerHTML = `<b>${calPts.length + 1} / 4</b> · Dotknij zewnętrzną krawędź podwójnego pola – ${CAL_TXT[calPts.length]}`;
-    else $('#cal-msg').innerHTML = 'Siatka pokrywa tarczę? Punkty możesz przeciągać palcem. Wyjmij lotki i naciśnij <b>Start</b>.';
+    if (calPts.length < 4) $('#cal-msg').innerHTML = t('calStep', { n: calPts.length + 1, x: t(CAL_KEYS[calPts.length]) });
+    else $('#cal-msg').innerHTML = t('calDone');
     $('#cal-ok').disabled = calPts.length < 4;
-    $('#cal-ok').textContent = calMode === 'remote' ? 'Start – wysyłaj rzutki' : 'Start gry';
+    $('#cal-ok').textContent = calMode === 'remote' ? t('calStartRemote') : t('startGame');
   }
   function recomputeH() { if (calPts.length === 4) { const dst = Board.CAL.map(p => [p.x, p.y]); Hb2i = Vision.homography(dst, calPts); } else Hb2i = null; }
   function drawWire(ctx, H, f, alpha) {
@@ -187,7 +252,7 @@
   ov.addEventListener('pointerup', () => { dragIdx = -1; });
 
   async function openCamera(mode) {
-    calMode = mode || 'host'; show('scr-camera'); $('#cal-msg').textContent = 'Uruchamiam kamerę…';
+    calMode = mode || 'host'; show('scr-camera'); $('#cal-msg').textContent = t('camStarting');
     try {
       const d = await Vision.startCamera(video); vw = d.w; vh = d.h; cameraOn = true;
       await Vision.unlockCamera();
@@ -195,7 +260,7 @@
       calPts = saved && saved.vw === vw && saved.vh === vh ? saved.pts : [];
       recomputeH(); calMsg(); requestWake(); calLoop();
     } catch (err) {
-      $('#cal-msg').innerHTML = 'Brak dostępu do kamery. Zezwól aplikacji na aparat w ustawieniach telefonu. (' + esc(err.message) + ')';
+      $('#cal-msg').innerHTML = t('camDenied', { x: esc(err.message) });
     }
   }
   $('#cal-reset').onclick = () => { calPts = []; recomputeH(); calMsg(); };
@@ -211,7 +276,7 @@
   $('#cal-ok').onclick = async () => {
     store.set('cal', { vw, vh, pts: calPts });
     $('#cal-ok').disabled = true;
-    if (settings.lock) $('#cal-msg').textContent = 'Ustawiam ostrość na środek tarczy i ją blokuję… nie ruszaj telefonu.';
+    if (settings.lock) $('#cal-msg').textContent = t('locking');
     await lockNow();
     $('#cal-ok').disabled = false;
     Vision.setCalibration(calPts, vw, vh);
@@ -222,8 +287,8 @@
     let txt = '';
     if (settings.lock) {
       const lock = await Vision.lockCamera(Vision.apply(Hb2i, 0, 0));
-      txt = lock.focus === 'zablokowana' ? '🔒 Ostrość zablokowana' : lock.focus === 'ustawiona raz' ? '🔒 Ostrość ustawiona' : '⚠ Bez blokady ostrości';
-      txt += (lock.exposure ? ' · ekspozycja' : '') + (lock.wb ? ' · balans bieli' : '');
+      txt = t(lock.focus === 'zablokowana' ? 'lockOk' : lock.focus === 'ustawiona raz' ? 'lockOnce' : 'lockNo');
+      txt += (lock.exposure ? t('lockExp') : '') + (lock.wb ? t('lockWb') : '');
     }
     $('#cam-lock').textContent = $('#r-lock').textContent = txt;
   }
@@ -231,78 +296,90 @@
   // ---------- GRA ----------
   let match = null, useCam = false, turnDarts = [], editSlot = -1, keepMatch = false;
   const pc = $('#play-canvas'), pctx = pc.getContext('2d');
-  function say(t) { if (!settings.voice || !window.speechSynthesis) return; const u = new SpeechSynthesisUtterance(t); u.lang = 'pl-PL'; speechSynthesis.cancel(); speechSynthesis.speak(u); }
-  function speakHit(h) { return h.mult === 0 ? 'pudło' : h.num === 25 ? (h.mult === 2 ? 'bull' : 'dwadzieścia pięć') : (h.mult === 3 ? 'potrójne ' : h.mult === 2 ? 'podwójne ' : '') + h.num; }
+  const curName = () => match.state.players[match.state.cur].name;
+  // sędzia na początku kolejki: imię, a w X01 – „potrzebujesz X”, gdy jest zejście
+  function announcePlayer(first) {
+    const st = match.state, p = st.players[st.cur];
+    if (first) return Caller.gameOn(p.name);
+    if (st.kind === 'x01' && p.rest <= 170 && Games.checkout(p.rest, 3, st.o.doubleOut)) Caller.require(p.name, p.rest);
+    else Caller.player(p.name);
+  }
 
   function startMatch(withCam, keep) {
     useCam = withCam;
-    if (!keep || !match) match = Games.Match(cfg.kind, players.slice(), gameOpts());
+    const fresh = !keep || !match;
+    if (fresh) match = Games.Match(cfg.kind, players.slice(), gameOpts());
     turnDarts = []; pend = null;
     show('scr-play'); $('#play-stage').hidden = !withCam; $('.play-main').classList.toggle('nocam', !withCam);
     $('#scr-play').classList.toggle('nocam', !withCam); $('#kp-inline').hidden = withCam; $('.actions').hidden = !withCam; kpInline.reset();
     $('#g-title').textContent = match.title();
-    $('#g-pair').textContent = Pair.connected() && Pair.role === 'host' ? '🔗 2 kamery' : '';
+    $('#g-pair').textContent = Pair.connected() && Pair.role === 'host' ? t('twoCams') : '';
     if (withCam) { Vision.start(onVision); playLoop(); }
-    render(); setStatus(`${match.state.players[match.state.cur].name} – rzucaj!`);
+    render(); setStatus(t('throwNow', { n: curName() }));
+    if (fresh) setTimeout(() => announcePlayer(true), 300);
   }
-  function setStatus(t, cls) { const s = $('#status'); s.textContent = t; s.className = 'status' + (cls ? ' ' + cls : ''); mirror(); }
+  function setStatus(txt, cls) { const s = $('#status'); s.textContent = txt; s.className = 'status' + (cls ? ' ' + cls : ''); mirror(); }
   function render() {
     const st = match.state;
     $('#g-header').textContent = match.header();
     $('#board-view').classList.toggle('many', st.players.length > 4);
     const log = (st.log || []).slice().reverse();
     $('#history').innerHTML = log.length ? log.map(e => `<div class="h-row${e.bust ? ' bust' : ''}${e.tag ? '' : ' notag'}">${e.tag ? `<span class="h-t">${e.tag}</span>` : ''}<span class="h-n">${esc(st.players[e.p].name)}</span>
-      <span class="h-d">${e.d.join(' ')}</span><b>${e.bust ? 'BUST' : e.sum}${e.rest != null ? `<span class="h-rest">→ ${e.rest}</span>` : ''}</b></div>`).join('')
-      : '<p class="muted small h-empty">Tu pojawią się kolejne kolejki</p>';
+      <span class="h-d">${e.d.map(lbl).join(' ')}</span><b>${e.bust ? 'BUST' : e.sum}${e.rest != null ? `<span class="h-rest">→ ${e.rest}</span>` : ''}</b></div>`).join('')
+      : `<p class="muted small h-empty">${esc(t('historyEmpty'))}</p>`;
     $('#board-view').innerHTML = match.view().map(r => `<div class="ps${r.active ? ' active' : ''}"><span class="nm">${esc(r.name)}</span><span class="big">${r.big}</span>
-      <span class="sub">${r.sub}</span>${r.hint ? `<span class="hint">Zejście: ${r.hint}</span>` : ''}</div>`).join('');
-    const t = st.turn || [], sum = t.reduce((a, h) => a + h.value, 0);
-    $('#slots').innerHTML = [0, 1, 2].map(i => t[i] ? `<button class="slot" data-s="${i}" aria-label="Popraw rzutkę ${i + 1}">${t[i].label}<span class="edit">✎</span></button>` : `<div class="slot empty" data-s="${i}">rzutka ${i + 1}</div>`).join('') + `<div class="slot sum">${sum}</div>`;
+      <span class="sub">${r.sub}</span>${r.hint ? `<span class="hint">${esc(t('checkout', { x: r.hint }))}</span>` : ''}</div>`).join('');
+    // pole następnej rzutki jest podświetlone – tam trafi wpisana / wykryta wartość
+    const tr = st.turn || [], sum = tr.reduce((a, h) => a + h.value, 0), nextIdx = st.awaitNext || st.done ? -1 : tr.length;
+    $('#slots').innerHTML = [0, 1, 2].map(i => tr[i] ? `<button class="slot" data-s="${i}" aria-label="${esc(t('fixDartN', { n: i + 1 }))}">${lbl(tr[i].label)}<span class="edit">✎</span></button>`
+      : `<div class="slot empty${i === nextIdx ? ' next' : ''}" data-s="${i}">${i === nextIdx ? '▸ ' : ''}${esc(t('dartN', { n: i + 1 }))}</div>`).join('') + `<div class="slot sum">${sum}</div>`;
+    const nk = $('#kp-inline [data-k=N]'); if (nk) nk.classList.toggle('pulse', !!st.awaitNext);
     mirror(); persist();
   }
   function mirror() {
-    if (Pair.role === 'host' && Pair.connected() && match) Pair.send({ t: 'view', rows: match.view(), turn: (match.state.turn || []).map(h => h.label), status: $('#status').textContent });
+    if (Pair.role === 'host' && Pair.connected() && match) Pair.send({ t: 'view', rows: match.view(), turn: (match.state.turn || []).map(h => lbl(h.label)), status: $('#status').textContent });
   }
   function addHit(hit) {
     if (!match || match.state.done) return;
-    if (match.state.awaitNext) { setStatus(useCam ? 'Wyjmij lotki albo naciśnij „Dalej”' : 'Naciśnij „Dalej”', 'take'); return; }
+    if (match.state.awaitNext) { setStatus(t(useCam ? 'pullOrNext' : 'pressNext'), 'take'); return; }
     const r = match.dart(hit); if (!r) return;
-    say(speakHit(hit)); render(); afterDart(r);
+    if (settings.each && !r.turnOver) Caller.hit(hit);
+    render(); afterDart(r);
   }
   function afterDart(r) {
-    const st = match.state;
-    if (r.gameOver) { setStatus(r.msg, 'win'); say(r.msg.replace('🏆', '')); return endGame(); }
-    if (r.bust) { setStatus(useCam ? 'BUST! Wyjmij lotki' : 'BUST! Dalej → następny gracz', 'bust'); say('bust'); return; }
-    if (r.legOver) { setStatus(r.msg + (useCam ? ' Wyjmij lotki' : ''), 'win'); say(r.msg); return; }
+    const st = match.state, sum = st.turn.reduce((a, h) => a + h.value, 0);
+    if (r.gameOver) { setStatus(r.msg, 'win'); (st.kind === 'x01' ? Caller.match : Caller.wins).call(Caller, st.winner); return endGame(); }
+    if (r.bust) { setStatus(t(useCam ? 'bustCam' : 'bustKp'), 'bust'); Caller.bust(); return; }
+    if (r.legOver) { setStatus(r.msg + (useCam ? ' ' + t('bustCam').replace(/^BUST! /, '') : ''), 'win'); Caller.leg(curName()); return; }
     if (r.turnOver) {
-      const sum = st.turn.reduce((a, h) => a + h.value, 0);
-      setStatus(takeMsg(`${sum} pkt`), 'take'); if (st.kind === 'x01' || st.kind === 'high') setTimeout(() => say(String(sum)), 900); return;
+      const p = t('pts', { n: sum });
+      setStatus(useCam ? t('pullDarts', { x: p }) : t('enterNext', { x: p }), 'take');
+      if (st.kind === 'x01' || st.kind === 'high' || st.kind === 'shanghai') Caller.score(sum); else if (settings.each) Caller.hit(st.turn[st.turn.length - 1]);
+      return;
     }
-    setStatus(r.msg || `${st.players[st.cur].name} – rzutka ${st.turn.length + 1}`);
+    setStatus(r.msg || t('dartOf', { n: curName(), d: st.turn.length + 1 }));
   }
-  function takeMsg(t) { return useCam ? t + ' – wyjmij lotki' : t + ' – wpisz kolejną rzutkę lub „Dalej”'; }
   function next() {
     if (!match) return;
     const msg = match.nextPlayer(); render();
-    if (match.state.done) { setStatus(msg, 'win'); return endGame(); }
-    const p = match.state.players[match.state.cur];
-    setStatus(`${p.name} – rzucaj!`); say(p.name);
+    if (match.state.done) { setStatus(msg, 'win'); Caller.wins(match.state.winner); return endGame(); }
+    setStatus(t('throwNow', { n: curName() })); announcePlayer(false);
     if (useCam) Vision.resetReference(false);
     if (pend) { clearTimeout(pend.t); pend = null; }
     Pair.send({ t: 'reset' });
   }
   function onVision(ev) {
     const pill = $('#cam-state'), st = match && match.state;
-    if (ev.type === 'ready' || ev.type === 'clear') { pill.textContent = 'Kamera gotowa'; pill.className = 'pill ok'; }
-    if (ev.type === 'moving') { pill.textContent = 'Ruch…'; pill.className = 'pill warn'; }
+    if (ev.type === 'ready' || ev.type === 'clear') { pill.textContent = t('camReady'); pill.className = 'pill ok'; }
+    if (ev.type === 'moving') { pill.textContent = t('moving'); pill.className = 'pill warn'; }
     if (ev.type === 'dart') {
-      pill.textContent = 'Kamera gotowa'; pill.className = 'pill ok';
+      pill.textContent = t('camReady'); pill.className = 'pill ok';
       if (st && st.awaitNext) { next(); return; } // po pełnej kolejce zmiana obrazu = wyjmowanie lotek
       candidate('local', ev.dart.board, ev.dart.img);
     }
     if (ev.type === 'big') {
       if (st && (st.awaitNext || ev.nearEmpty)) { ev.accept(); if (st.awaitNext) next(); turnDarts = []; }
-      else { pill.textContent = 'Coś zasłania tarczę'; pill.className = 'pill warn'; }
+      else { pill.textContent = t('blocked'); pill.className = 'pill warn'; }
     }
   }
   // łączenie rzutek z dwóch kamer: ta sama rzutka w obu w ciągu 1,5 s → średnie położenie
@@ -330,7 +407,7 @@
     const n = (match && match.state.turn.length) || 0;
     turnDarts.slice(-n).forEach((d) => { const x = f.ox + d.img[0] * f.s, y = f.oy + d.img[1] * f.s;
       pctx.beginPath(); pctx.arc(x, y, 7, 0, 7); pctx.fillStyle = d.both ? '#f2c14e' : '#e2453c'; pctx.fill(); pctx.strokeStyle = '#fff'; pctx.lineWidth = 2; pctx.stroke();
-      pctx.fillStyle = '#fff'; pctx.font = 'bold 13px system-ui'; pctx.fillText(d.score.label, x + 10, y - 8); });
+      pctx.fillStyle = '#fff'; pctx.font = 'bold 13px system-ui'; pctx.fillText(lbl(d.score.label), x + 10, y - 8); });
     if (n === 0) turnDarts = [];
     requestAnimationFrame(playLoop);
   }
@@ -339,11 +416,14 @@
   function Keypad(el, { onHit, onPending, mode }) {
     let mult = 1, pend = null, timer = 0;
     const K = (k, txt, cls = '') => `<button class="kp ${cls}" data-k="${k}">${txt}</button>`;
-    el.innerHTML = K(1, 1) + K(2, 2) + K(3, 3) + K('D', 'D<small>podwójne</small>', 'mod') +
-      K(4, 4) + K(5, 5) + K(6, 6) + K('T', 'T<small>potrójne</small>', 'mod') +
-      K(7, 7) + K(8, 8) + K(9, 9) + K(25, '25<small>D+25 = Bull</small>', 'mod') +
-      (mode === 'inline' ? K('U', '↶<small>cofnij</small>', 'fn') + K(0, '0<small>pudło</small>') + K('N', 'Dalej →', 'primary span2')
-                         : K(0, '0<small>pudło</small>', 'span2') + K('X', '✕ Usuń rzutkę', 'fn danger span2'));
+    const build = () => {
+      el.innerHTML = K(1, 1) + K(2, 2) + K(3, 3) + K('D', `D<small>${t('kpDouble')}</small>`, 'mod') +
+        K(4, 4) + K(5, 5) + K(6, 6) + K('T', `T<small>${t('kpTreble')}</small>`, 'mod') +
+        K(7, 7) + K(8, 8) + K(9, 9) + K(25, `25<small>${t('kpBull')}</small>`, 'mod') +
+        (mode === 'inline' ? K('U', `↶<small>${t('kpUndo')}</small>`, 'fn') + K(0, `0<small>${t('kpMiss')}</small>`) + K('N', t('kpNext'), 'primary span2')
+                           : K(0, `0<small>${t('kpMiss')}</small>`, 'span2') + K('X', t('kpRemove'), 'fn danger span2'));
+    };
+    build();
     const paint = () => {
       el.querySelectorAll('.mod').forEach(b => b.classList.toggle('on', (b.dataset.k === 'D' && mult === 2) || (b.dataset.k === 'T' && mult === 3)));
       onPending && onPending(pend ? (mult === 3 ? 'T' : mult === 2 ? 'D' : '') + pend + '…' : mult > 1 ? (mult === 3 ? 'T' : 'D') + ' …' : '');
@@ -362,7 +442,7 @@
       if (k === 'U') { if (pend || mult > 1) { clearTimeout(timer); pend = null; mult = 1; return paint(); } return undoDart(); }
       if (k === 'N') { flushPend(); return next(); }
       if (k === 'X') return onHit(null);
-      if (k === '25') { flushPend(); if (mult === 3) { mult = 1; paint(); return setStatus('Nie ma potrójnego bulla', 'take'); } return commit(25); }
+      if (k === '25') { flushPend(); if (mult === 3) { mult = 1; paint(); return setStatus(t('noT25'), 'take'); } return commit(25); }
       const d = +k;
       if (pend === '1') return commit(10 + d);
       if (pend === '2') { if (d === 0) return commit(20); commit(2); }
@@ -370,35 +450,35 @@
       if (d >= 3) return commit(d);
       pend = String(d); paint(); clearTimeout(timer); timer = setTimeout(flushPend, 1300); // 1 lub 2 bez drugiej cyfry
     });
-    return { reset() { clearTimeout(timer); mult = 1; pend = null; paint(); } };
+    return { reset() { clearTimeout(timer); mult = 1; pend = null; paint(); }, relabel() { build(); paint(); } };
   }
-  let pendingTxt = '';
-  const kpInline = Keypad($('#kp-inline'), {
+  let kpInline = null, kpDlg = null;
+  kpInline = Keypad($('#kp-inline'), {
     mode: 'inline',
-    onPending: (t) => { pendingTxt = t; const e = $('#slots .slot.empty'); if (e) { e.textContent = t || `rzutka ${+e.dataset.s + 1}`; e.classList.toggle('pending', !!t); } },
+    onPending: (txt) => { const e = $('#slots .slot.next'); if (e) { e.textContent = txt || '▸ ' + t('dartN', { n: +e.dataset.s + 1 }); e.classList.toggle('pending', !!txt); } },
     onHit: (hit) => { if (match.state.awaitNext) next(); addHit(hit); } // kolejna liczba po pełnej kolejce = następny gracz
   });
   const dlg = $('#dlg-board');
-  const kpDlg = Keypad($('#kp-dlg'), {
+  kpDlg = Keypad($('#kp-dlg'), {
     mode: 'dlg',
-    onPending: (t) => { $('#dlg-title').textContent = (editSlot >= 0 ? `Popraw rzutkę ${editSlot + 1}` : 'Wpisz trafienie') + (t ? ': ' + t : ''); },
+    onPending: (txt) => { $('#dlg-title').textContent = (editSlot >= 0 ? t('fixDartN', { n: editSlot + 1 }) : t('enterHit')) + (txt ? ': ' + txt : ''); },
     onHit: (hit) => {
       dlg.close();
       if (editSlot < 0) { if (hit) addHit(hit); return; }
       const st = match.state, n = st.turn.length, idx = turnDarts.length - n + editSlot;
       const r = match.replaceAt(editSlot, hit); if (!r) return;
       if (useCam && idx >= 0 && turnDarts[idx]) { if (hit) turnDarts[idx].score = hit; else turnDarts.splice(idx, 1); }
-      render(); afterDart(r); if (!hit) setStatus('Usunięto rzutkę');
+      render(); afterDart(r); if (!hit) setStatus(t('removed'));
     }
   });
   function openKeypad(slot) {
     editSlot = slot >= 0 && slot < match.state.turn.length ? slot : -1;
-    if (editSlot < 0 && match.state.awaitNext) return setStatus('Kolejka pełna – dotknij rzutkę, aby ją poprawić', 'take');
+    if (editSlot < 0 && match.state.awaitNext) return setStatus(t('turnFull'), 'take');
     $('#kp-dlg [data-k=X]').hidden = editSlot < 0; $('#kp-dlg [data-k="0"]').classList.toggle('span4', editSlot < 0);
     kpDlg.reset(); dlg.showModal();
   }
   dlg.addEventListener('close', () => kpDlg.reset());
-  function undoDart() { match.undo(); turnDarts.pop(); render(); setStatus('Cofnięto'); if (useCam) Vision.resetReference(false); Pair.send({ t: 'reset' }); }
+  function undoDart() { match.undo(); turnDarts.pop(); render(); setStatus(t('undone')); if (useCam) Vision.resetReference(false); Pair.send({ t: 'reset' }); }
   $('#slots').addEventListener('click', (e) => {
     const s = e.target.closest('.slot[data-s]'); if (!s) return;
     if (!useCam && s.classList.contains('empty')) return; // bez kamery wpisuje się klawiaturą poniżej
@@ -409,14 +489,19 @@
   $('#a-undo').onclick = undoDart;
   $('#a-next').onclick = next;
   $('#g-menu').onclick = () => { $('#m-recal').hidden = !useCam; $('#dlg-menu').showModal(); };
+  $('#m-save').onclick = () => { $('#dlg-menu').close(); saveGame(); home(); toast(t('gameSaved')); };
   $('#m-recal').onclick = () => { $('#dlg-menu').close(); Vision.stop(); keepMatch = true; openCamera(); }; // ta sama gra po kalibracji
   $('#m-restart').onclick = () => { $('#dlg-menu').close(); if (useCam) Vision.setCalibration(calPts, vw, vh); startMatch(useCam); };
   $('#m-end').onclick = () => { $('#dlg-menu').close(); home(); };
+  function toast(txt) {
+    let el = $('#toast'); if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; document.body.appendChild(el); }
+    el.textContent = txt; el.classList.add('on'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('on'), 3200);
+  }
 
   function endGame() {
-    Vision.stop(); localStorage.removeItem('dart.match');
-    $('#end-title').textContent = `🏆 ${match.state.winner} wygrywa!`;
-    $('#end-table').innerHTML = `<table><tr><th>Gracz</th><th>Wynik</th><th></th></tr>${match.view().map(r => `<tr><td>${esc(r.name)}</td><td>${r.big}</td><td class="muted">${r.sub}</td></tr>`).join('')}</table>`;
+    Vision.stop(); localStorage.removeItem('dart.match'); dropSaved();
+    $('#end-title').textContent = t('winsTitle', { n: match.state.winner });
+    $('#end-table').innerHTML = `<table><tr><th>${esc(t('colPlayer'))}</th><th>${esc(t('colScore'))}</th><th></th></tr>${match.view().map(r => `<tr><td>${esc(r.name)}</td><td>${r.big}</td><td class="muted">${r.sub}</td></tr>`).join('')}</table>`;
     $('#dlg-end').showModal();
   }
   $('#end-again').onclick = () => { $('#dlg-end').close(); if (useCam) Vision.setCalibration(calPts, vw, vh); startMatch(useCam); };
@@ -426,9 +511,9 @@
   const dlgPair = $('#dlg-pair');
   function pairState() {
     const ok = Pair.connected() && Pair.role === 'host';
-    $('#pair-state').textContent = ok ? '🔗 Druga kamera połączona' : 'Nie połączono';
+    $('#pair-state').textContent = t(ok ? 'paired' : 'notPaired');
     $('#pair-state').className = 'small ' + (ok ? 'paired' : 'muted');
-    $('#pair-host').textContent = ok ? 'Połącz ponownie' : 'Połącz drugi telefon';
+    $('#pair-host').textContent = t(ok ? 'pairAgain' : 'pairBtn');
     if (screen === 'scr-new' && step === 2) $('#w-next').disabled = cfg.cams === 'two' && !ok;
   }
   function pairView(stepTxt, { qr, scanBtn } = {}) {
@@ -442,24 +527,24 @@
     return new Promise(res => { $('#pair-text-ok').onclick = () => res($('#pair-text').value); });
   }
   $('#pair-host').onclick = async () => {
-    dlgPair.showModal(); $('#pair-title').textContent = 'Połącz drugi telefon';
-    pairView('Przygotowuję kod…');
+    dlgPair.showModal(); $('#pair-title').textContent = t('pairBtn');
+    pairView(t('pairPrep'));
     try {
       const code = await Pair.host();
-      pairView('<b>1.</b> Na drugim telefonie otwórz aplikację i wybierz <b>„Ten telefon to druga kamera”</b>. Zeskanuj nim ten kod.<br><b>2.</b> Gdy drugi telefon pokaże swój kod – naciśnij przycisk poniżej.', { qr: code, scanBtn: true });
+      pairView(t('pairHost'), { qr: code, scanBtn: true });
       $('#pair-scan').onclick = async () => {
-        pairView('Skieruj aparat na kod wyświetlony na drugim telefonie.');
-        try { await Pair.hostAccept(await readCode()); pairView('Łączę telefony…'); } catch (e) { pairView('Nie udało się: ' + esc(e.message) + '. Spróbuj od nowa.'); }
+        pairView(t('pairScanOther'));
+        try { await Pair.hostAccept(await readCode()); pairView(t('pairConnecting')); } catch (e) { pairView(t('pairFail', { x: esc(e.message) })); }
       };
-    } catch (e) { pairView('Nie udało się przygotować parowania: ' + esc(e.message)); }
+    } catch (e) { pairView(t('pairPrepFail', { x: esc(e.message) })); }
   };
   async function joinAsRemote() {
-    dlgPair.showModal(); $('#pair-title').textContent = 'Druga kamera';
-    pairView('Skieruj aparat na kod wyświetlony na <b>głównym telefonie</b>.<br><span class="muted small">Oba telefony muszą być w tej samej sieci Wi‑Fi (np. hotspot).</span>');
+    dlgPair.showModal(); $('#pair-title').textContent = t('secondCam');
+    pairView(t('pairJoin'));
     try {
       const answer = await Pair.join(await readCode());
-      pairView('Pokaż ten kod głównemu telefonowi – tam naciśnij <b>„Skanuj kod z drugiego telefonu”</b>.', { qr: answer });
-    } catch (e) { pairView('Nie udało się: ' + esc(e.message) + '. Spróbuj od nowa.'); }
+      pairView(t('pairShow'), { qr: answer });
+    } catch (e) { pairView(t('pairFail', { x: esc(e.message) })); }
   }
   $('#pair-cancel').onclick = () => { Pair.stopScan(); dlgPair.close(); if (!Pair.connected()) Pair.close(); };
   Pair.on((m) => {
@@ -472,7 +557,7 @@
       if (Pair.role === 'host') { pairState(); mirror(); } else openCamera('remote');
     } else {
       pairState();
-      $('#r-conn').textContent = 'Rozłączono'; $('#r-conn').className = 'pill static warn';
+      $('#r-conn').textContent = t('disconnected'); $('#r-conn').className = 'pill static warn';
       $('#g-pair').textContent = '';
     }
   });
@@ -481,14 +566,14 @@
   let remoteDarts = [];
   const rc = $('#remote-canvas'), rctx = rc.getContext('2d');
   function startRemote() {
-    show('scr-remote'); $('#r-conn').textContent = 'Połączono'; $('#r-conn').className = 'pill static ok';
+    show('scr-remote'); $('#r-conn').textContent = t('connected'); $('#r-conn').className = 'pill static ok';
     Vision.start(onRemoteVision); remoteLoop();
   }
   function onRemoteVision(ev) {
     const pill = $('#r-cam');
-    if (ev.type === 'ready' || ev.type === 'clear') { pill.textContent = 'Kamera gotowa'; pill.className = 'pill ok'; }
-    if (ev.type === 'moving') { pill.textContent = 'Ruch…'; pill.className = 'pill warn'; }
-    if (ev.type === 'dart') { remoteDarts.push(ev.dart); Pair.send({ t: 'dart', b: ev.dart.board, ts: Date.now() }); $('#r-status').textContent = 'Wysłano: ' + ev.dart.score.label; pill.textContent = 'Kamera gotowa'; pill.className = 'pill ok'; }
+    if (ev.type === 'ready' || ev.type === 'clear') { pill.textContent = t('camReady'); pill.className = 'pill ok'; }
+    if (ev.type === 'moving') { pill.textContent = t('moving'); pill.className = 'pill warn'; }
+    if (ev.type === 'dart') { remoteDarts.push(ev.dart); Pair.send({ t: 'dart', b: ev.dart.board, ts: Date.now() }); $('#r-status').textContent = t('sent', { x: lbl(ev.dart.score.label) }); pill.textContent = t('camReady'); pill.className = 'pill ok'; }
     if (ev.type === 'big') ev.accept();
   }
   function remoteLoop() {
@@ -500,7 +585,7 @@
     if (Hb2i) drawWire(rctx, Hb2i, f, 0.4);
     remoteDarts.slice(-3).forEach(d => { const x = f.ox + d.img[0] * f.s, y = f.oy + d.img[1] * f.s;
       rctx.beginPath(); rctx.arc(x, y, 7, 0, 7); rctx.fillStyle = '#2f7fe2'; rctx.fill(); rctx.strokeStyle = '#fff'; rctx.lineWidth = 2; rctx.stroke();
-      rctx.fillStyle = '#fff'; rctx.font = 'bold 13px system-ui'; rctx.fillText(d.score.label, x + 10, y - 8); });
+      rctx.fillStyle = '#fff'; rctx.font = 'bold 13px system-ui'; rctx.fillText(lbl(d.score.label), x + 10, y - 8); });
     requestAnimationFrame(remoteLoop);
   }
   function renderRemoteView(m) {
@@ -520,7 +605,7 @@
   ['resize', 'orientationchange', 'pageshow', 'focus'].forEach(ev => window.addEventListener(ev, () => { fitHeight(); setTimeout(fitHeight, 250); }));
   if (window.visualViewport) visualViewport.addEventListener('resize', fitHeight);
   document.addEventListener('visibilitychange', () => setTimeout(fitHeight, 100));
-  [0, 100, 400, 1000, 2500].forEach(t => setTimeout(fitHeight, t));
+  [0, 100, 400, 1000, 2500].forEach(ms => setTimeout(fitHeight, ms));
 
   // ekran nie gaśnie w trakcie gry
   async function requestWake() { try { await navigator.wakeLock.request('screen'); } catch {} }
@@ -532,10 +617,10 @@
     else navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
-  // ---------- wznowienie po odświeżeniu / ponownym otwarciu ----------
+  // ---------- wznowienie po odświeżeniu / ponownym otwarciu / z zapisu ----------
   async function resumeCamera() {
     keepMatch = true; calMode = 'host';
-    show('scr-camera'); $('#cal-msg').textContent = 'Wznawiam grę…'; $('#cal-ok').disabled = true;
+    show('scr-camera'); $('#cal-msg').textContent = t('resuming'); $('#cal-ok').disabled = true;
     try {
       const d = await Vision.startCamera(video); vw = d.w; vh = d.h; cameraOn = true;
       const savedCal = store.get('cal', null);
@@ -543,8 +628,8 @@
       calPts = savedCal.pts; recomputeH();
       await lockNow(); Vision.setCalibration(calPts, vw, vh); requestWake();
       keepMatch = false; startMatch(true, true);
-      setStatus(`Wznowiono grę – rzuca ${match.state.players[match.state.cur].name}` + (cfg.cams === 'two' ? ' (druga kamera rozłączona)' : ''));
-    } catch { keepMatch = false; startMatch(false, true); setStatus('Wznowiono grę bez kamery'); }
+      setStatus(t('resumed', { n: curName() }) + (cfg.cams === 'two' ? t('secondLost') : ''));
+    } catch { keepMatch = false; startMatch(false, true); setStatus(t('resumedNoCam')); }
   }
   function restore() {
     $$('.screen').forEach(s => s.hidden = true);
@@ -553,15 +638,16 @@
     calMode = ses.calMode || 'host';
     if (ses.screen === 'scr-new') return wizard(ses.step || 0);
     if (ses.screen === 'scr-remote' || calMode === 'remote') {
-      home(); $('#home-remote').classList.add('warn'); $('#home-remote-sub').textContent = 'Połączenie przerwane – dotknij, aby dołączyć ponownie'; return;
+      home(); $('#home-remote').classList.add('warn'); $('#home-remote-sub').textContent = t('remoteLost'); return;
     }
     if ((ses.screen === 'scr-play' || ses.screen === 'scr-camera') && saved) {
-      match = Games.Match(saved.kind, saved.players, saved.opts, saved);
+      match = Games.Match(saved.kind, saved.players, saved.opts, saved); savedId = ses.savedId || null;
       if (ses.screen === 'scr-camera' || ses.useCam) return resumeCamera();
-      startMatch(false, true); return setStatus(`Wznowiono grę – rzuca ${match.state.players[match.state.cur].name}`);
+      startMatch(false, true); return setStatus(t('resumed', { n: curName() }));
     }
     if (ses.screen === 'scr-camera') return launch(); // kalibracja nowej gry
     home();
   }
+  I18N.apply(); $$('.ver').forEach(e => e.textContent = t('version', { v: VERSION })); $('#recent').dataset.label = t('recentPlayed');
   restore();
 })();

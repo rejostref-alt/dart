@@ -43,7 +43,7 @@ const Games = (() => {
       const p = s.players[s.cur], o = s.o;
       if (s.turn.length === 0) s.turnStartRest = p.rest;
       s.turn.push(hit); p.darts++;
-      if (!p.opened) { if (hit.mult === 2) p.opened = true; else return this._after(s, 'Potrzebne podwójne na start'); }
+      if (!p.opened) { if (hit.mult === 2) p.opened = true; else return this._after(s, t('needDoubleIn')); }
       const left = p.rest - hit.value;
       const bust = left < 0 || (o.doubleOut && left === 1) || (left === 0 && o.doubleOut && hit.mult !== 2);
       if (bust) {
@@ -57,12 +57,12 @@ const Games = (() => {
     _after(s, msg) { return { msg, turnOver: s.turn.length >= 3 }; },
     _legWon(s) {
       const p = s.players[s.cur], o = s.o; p.legs++;
-      let msg = `${p.name} wygrywa lega!`, gameOver = false;
+      let msg = t('wonLeg', { n: p.name }), gameOver = false;
       if (o.sets > 1) {
-        if (p.legs >= o.legs) { p.sets++; s.players.forEach(q => q.legs = 0); msg = `${p.name} wygrywa seta!`; s.set++; }
+        if (p.legs >= o.legs) { p.sets++; s.players.forEach(q => q.legs = 0); msg = t('wonSet', { n: p.name }); s.set++; }
         if (p.sets >= o.sets) gameOver = true;
       } else if (p.legs >= o.legs) gameOver = true;
-      if (gameOver) { s.done = true; s.winner = p.name; return { msg: `🏆 ${p.name} wygrywa mecz!`, turnOver: true, gameOver: true }; }
+      if (gameOver) { s.done = true; s.winner = p.name; return { msg: t('wonMatch', { n: p.name }), turnOver: true, gameOver: true, x01: true }; }
       s.leg++; s.players.forEach(q => { q.rest = o.start; q.opened = !o.doubleIn; });
       s.legStarter = (s.legStarter + 1) % s.players.length; s.nextOverride = s.legStarter;
       return { msg, turnOver: true, legOver: true };
@@ -70,11 +70,11 @@ const Games = (() => {
     view(s) {
       return s.players.map((p, i) => {
         const avg = p.darts ? (p.scored / p.darts * 3) : 0, co = p.rest <= 170 ? checkout(p.rest, 3, s.o.doubleOut) : null;
-        return { name: p.name, big: p.rest, sub: `Śr. ${avg.toFixed(1)}` + (s.o.legs > 1 || s.o.sets > 1 ? ` · Legi ${p.legs}` : '') + (s.o.sets > 1 ? ` · Sety ${p.sets}` : ''),
+        return { name: p.name, big: p.rest, sub: t('avg', { x: avg.toFixed(1) }) + (s.o.legs > 1 || s.o.sets > 1 ? ' · ' + t('legsN', { n: p.legs }) : '') + (s.o.sets > 1 ? ' · ' + t('setsN', { n: p.sets }) : ''),
           hint: i === s.cur && co ? co.join(' · ') : '', active: i === s.cur };
       });
     },
-    header(s) { return `${s.o.start} · Leg ${s.leg}` + (s.o.sets > 1 ? ` · Set ${s.set}` : '') + ` · do ${s.o.legs} leg${s.o.legs > 1 ? 'ów' : 'a'}` + (s.o.sets > 1 ? `, ${s.o.sets} setów` : ''); }
+    header(s) { return t('x01Header', { s: s.o.start, l: s.leg }) + (s.o.sets > 1 ? t('setN', { n: s.set }) : '') + t('toLegs', { n: s.o.legs, w: t(s.o.legs > 1 ? 'legWn' : 'legW1') }) + (s.o.sets > 1 ? t('setsHdr', { n: s.o.sets }) : ''); }
   };
 
   // ---------- Cricket ----------
@@ -93,62 +93,62 @@ const Games = (() => {
         }
       }
       const closedAll = CR.every(k => p.marks[k] >= 3);
-      if (closedAll && s.players.every(q => q === p || p.pts >= q.pts)) { s.done = true; s.winner = p.name; return { msg: `🏆 ${p.name} wygrywa!`, turnOver: true, gameOver: true }; }
+      if (closedAll && s.players.every(q => q === p || p.pts >= q.pts)) { s.done = true; s.winner = p.name; return { msg: t('wins', { n: p.name }), turnOver: true, gameOver: true }; }
       return { turnOver: s.turn.length >= 3 };
     },
     view(s) {
       const sym = (m) => m >= 3 ? 'Ⓧ' : m === 2 ? 'X' : m === 1 ? '/' : '·';
       return s.players.map((p, i) => ({ name: p.name, big: p.pts, sub: CR.map(k => `${k === 25 ? 'B' : k}${sym(p.marks[k])}`).join(' '), active: i === s.cur }));
     },
-    header: (s) => `Cricket · runda ${s.round}`
+    header: (s) => 'Cricket · ' + t('roundN', { n: s.round })
   };
 
   // ---------- Around the Clock (po kolei) ----------
   const ATC = {
-    name: () => 'Po kolei 1–20 + Bull',
+    name: () => t('atcName'),
     init(players, o) { return { kind: 'atc', o, players: players.map(n => ({ name: n, target: 1, darts: 0 })), cur: 0, turn: [], round: 1, done: false }; },
     dart(s, hit) {
       s.turn.push(hit); const p = s.players[s.cur]; p.darts++;
       if (hit.num === p.target && hit.mult > 0) {
         const step = s.o.multSkip ? hit.mult : 1;
-        if (p.target === 25) { s.done = true; s.winner = p.name; return { msg: `🏆 ${p.name} wygrywa!`, turnOver: true, gameOver: true }; }
+        if (p.target === 25) { s.done = true; s.winner = p.name; return { msg: t('wins', { n: p.name }), turnOver: true, gameOver: true }; }
         p.target = p.target + step > 20 ? 25 : p.target + step;
       }
       return { turnOver: s.turn.length >= 3 };
     },
-    view: (s) => s.players.map((p, i) => ({ name: p.name, big: p.target === 25 ? 'Bull' : p.target, sub: `Cel · rzutki: ${p.darts}`, active: i === s.cur })),
-    header: (s) => `Po kolei · runda ${s.round}`
+    view: (s) => s.players.map((p, i) => ({ name: p.name, big: p.target === 25 ? 'Bull' : p.target, sub: t('atcSub', { n: p.darts }), active: i === s.cur })),
+    header: (s) => t('gAtc') + ' · ' + t('roundN', { n: s.round })
   };
 
   // ---------- Shanghai ----------
   const Shanghai = {
-    name: (o) => `Shanghai (${o.rounds} rund)`,
+    name: (o) => t('shName', { n: o.rounds }),
     init(players, o) { return { kind: 'shanghai', o, players: players.map(n => ({ name: n, pts: 0 })), cur: 0, turn: [], round: 1, done: false }; },
     dart(s, hit) {
       s.turn.push(hit); const p = s.players[s.cur];
       if (hit.num === s.round) p.pts += hit.value;
       if (s.turn.length === 3) {
         const m = new Set(s.turn.filter(h => h.num === s.round).map(h => h.mult));
-        if (m.has(1) && m.has(2) && m.has(3)) { s.done = true; s.winner = p.name; return { msg: `🏆 SHANGHAI! ${p.name} wygrywa`, turnOver: true, gameOver: true }; }
+        if (m.has(1) && m.has(2) && m.has(3)) { s.done = true; s.winner = p.name; return { msg: t('shanghaiWin', { n: p.name }), turnOver: true, gameOver: true }; }
       }
       return { turnOver: s.turn.length >= 3 };
     },
     onRoundEnd(s) {
-      if (s.round >= s.o.rounds) { const w = [...s.players].sort((a, b) => b.pts - a.pts)[0]; s.done = true; s.winner = w.name; return `🏆 ${w.name} wygrywa!`; }
+      if (s.round >= s.o.rounds) { const w = [...s.players].sort((a, b) => b.pts - a.pts)[0]; s.done = true; s.winner = w.name; return t('wins', { n: w.name }); }
       return null;
     },
-    view: (s) => s.players.map((p, i) => ({ name: p.name, big: p.pts, sub: `Runda ${s.round}: celuj w ${s.round}`, active: i === s.cur })),
-    header: (s) => `Shanghai · runda ${s.round}/${s.o.rounds}`
+    view: (s) => s.players.map((p, i) => ({ name: p.name, big: p.pts, sub: t('shSub', { n: s.round }), active: i === s.cur })),
+    header: (s) => 'Shanghai · ' + t('roundOf', { n: s.round, m: s.o.rounds })
   };
 
   // ---------- High Score ----------
   const High = {
-    name: (o) => `High Score (${o.rounds} rund)`,
+    name: (o) => t('hiName', { n: o.rounds }),
     init(players, o) { return { kind: 'high', o, players: players.map(n => ({ name: n, pts: 0 })), cur: 0, turn: [], round: 1, done: false }; },
     dart(s, hit) { s.turn.push(hit); s.players[s.cur].pts += hit.value; return { turnOver: s.turn.length >= 3 }; },
     onRoundEnd: Shanghai.onRoundEnd,
-    view: (s) => s.players.map((p, i) => ({ name: p.name, big: p.pts, sub: `Śr. na kolejkę ${(p.pts / Math.max(1, s.round - (i >= s.cur ? 1 : 0) || 1)).toFixed(1)}`, active: i === s.cur })),
-    header: (s) => `High Score · runda ${s.round}/${s.o.rounds}`
+    view: (s) => s.players.map((p, i) => ({ name: p.name, big: p.pts, sub: t('hiSub', { x: (p.pts / Math.max(1, s.round - (i >= s.cur ? 1 : 0) || 1)).toFixed(1) }), active: i === s.cur })),
+    header: (s) => 'High Score · ' + t('roundOf', { n: s.round, m: s.o.rounds })
   };
 
   const ENGINES = { x01: X01, cricket: Cricket, atc: ATC, shanghai: Shanghai, high: High };

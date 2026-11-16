@@ -123,9 +123,12 @@
       <div class="bar-title"><strong id="g-title"></strong><span id="g-header" class="muted small"></span></div>
       <button class="icon-btn" data-settings aria-label="Ustawienia">⚙</button>
     </header>
-    <div class="play-grid">
-      <div class="stage small" id="play-stage"><canvas id="play-canvas"></canvas><span id="cam-state" class="pill">Kamera</span><span id="g-pair" class="pill right"></span><span id="cam-lock" class="pill lock"></span></div>
-      <div id="board-view" class="scores"></div>
+    <div class="play-main">
+      <div class="stage fill" id="play-stage"><canvas id="play-canvas"></canvas><span id="cam-state" class="pill">Kamera</span><span id="g-pair" class="pill right"></span><span id="cam-lock" class="pill lock"></span></div>
+      <div class="play-side">
+        <div id="board-view" class="scores"></div>
+        <div class="history"><div class="h-head">Historia kolejek</div><div id="history" class="h-list"></div></div>
+      </div>
     </div>
     <div class="turn">
       <div class="turn-slots" id="slots"></div>
@@ -146,7 +149,7 @@
       <span id="r-conn" class="pill static ok">Połączono</span>
       <button class="icon-btn" data-settings aria-label="Ustawienia">⚙</button>
     </header>
-    <div class="stage small" id="remote-stage"><canvas id="remote-canvas"></canvas><span id="r-cam" class="pill">Kamera</span><span id="r-lock" class="pill lock"></span></div>
+    <div class="stage fill" id="remote-stage"><canvas id="remote-canvas"></canvas><span id="r-cam" class="pill">Kamera</span><span id="r-lock" class="pill lock"></span></div>
     <div id="r-status" class="status">Wysyłam rzutki do głównego telefonu</div>
     <div id="r-board" class="scores"></div>
     <div class="row">

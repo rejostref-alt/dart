@@ -3,7 +3,7 @@
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
   const store = { get(k, d) { try { const v = localStorage.getItem('dart.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
                   set(k, v) { try { localStorage.setItem('dart.' + k, JSON.stringify(v)); } catch {} } };
-  const VERSION = '7'; // przy każdej aktualizacji podbić też CACHE w sw.js
+  const VERSION = '8'; // przy każdej aktualizacji podbić też CACHE w sw.js
   $$('.ver').forEach(e => e.textContent = 'wersja ' + VERSION);
   const GEAR = $('[data-settings] svg').outerHTML;
   $$('[data-settings]').forEach(b => { b.innerHTML = GEAR; b.onclick = openSettings; });
@@ -114,7 +114,8 @@
     $('#players').innerHTML = players.map((p, i) => `<div class="player-row"><span class="num">${i + 1}</span>
       <input type="text" value="${esc(p)}" data-i="${i}" aria-label="Gracz ${i + 1}" enterkeyhint="next">
       <button class="icon-btn" data-del="${i}" aria-label="Usuń gracza" ${players.length < 2 ? 'disabled' : ''}>✕</button></div>`).join('');
-    const free = recent.filter(r => !players.includes(r));
+    $('#players').classList.toggle('two-col', players.length > 4);
+    const free = recent.filter(r => !players.includes(r)).slice(0, players.length > 4 ? 3 : 6);
     $('#recent').innerHTML = free.map(r => `<button class="chip" data-r="${esc(r)}">+ ${esc(r)}</button>`).join('');
     $('#add-player').hidden = players.length >= 8;
     persist();
@@ -237,7 +238,7 @@
     useCam = withCam;
     if (!keep || !match) match = Games.Match(cfg.kind, players.slice(), gameOpts());
     turnDarts = []; pend = null;
-    show('scr-play'); $('#play-stage').hidden = !withCam; $('.play-grid').classList.toggle('nocam', !withCam);
+    show('scr-play'); $('#play-stage').hidden = !withCam; $('.play-main').classList.toggle('nocam', !withCam);
     $('#g-title').textContent = match.title();
     $('#g-pair').textContent = Pair.connected() && Pair.role === 'host' ? '🔗 2 kamery' : '';
     if (withCam) { Vision.start(onVision); playLoop(); }
@@ -247,6 +248,11 @@
   function render() {
     const st = match.state;
     $('#g-header').textContent = match.header();
+    $('#board-view').classList.toggle('many', st.players.length > 4);
+    const log = (st.log || []).slice().reverse();
+    $('#history').innerHTML = log.length ? log.map(e => `<div class="h-row${e.bust ? ' bust' : ''}${e.tag ? '' : ' notag'}">${e.tag ? `<span class="h-t">${e.tag}</span>` : ''}<span class="h-n">${esc(st.players[e.p].name)}</span>
+      <span class="h-d">${e.d.join(' ')}</span><b>${e.bust ? 'BUST' : e.sum}${e.rest != null ? `<span class="h-rest">→ ${e.rest}</span>` : ''}</b></div>`).join('')
+      : '<p class="muted small h-empty">Tu pojawią się kolejne kolejki</p>';
     $('#board-view').innerHTML = match.view().map(r => `<div class="ps${r.active ? ' active' : ''}"><span class="nm">${esc(r.name)}</span><span class="big">${r.big}</span>
       <span class="sub">${r.sub}</span>${r.hint ? `<span class="hint">Zejście: ${r.hint}</span>` : ''}</div>`).join('');
     const t = st.turn || [], sum = t.reduce((a, h) => a + h.value, 0);

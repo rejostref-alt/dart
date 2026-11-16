@@ -157,20 +157,33 @@ const Games = (() => {
   function Match(kind, players, opts, saved) {
     const E = ENGINES[kind];
     let s = saved ? saved.s : E.init(players, opts); const hist = saved && saved.hist ? saved.hist : [];
+    // historia kolejek do wyświetlenia na ekranie gry (część stanu – działa z cofaniem i zapisem)
+    function logTurn(pre, r) {
+      const p = s.players[s.cur], x01 = s.kind === 'x01';
+      s.log = s.log || [];
+      s.log.push({ p: s.cur, d: s.turn.map(h => h.label), sum: s.turnBust ? 0 : s.turn.reduce((a, h) => a + h.value, 0), bust: !!s.turnBust,
+        tag: x01 ? (s.o.legs > 1 || s.o.sets > 1 ? 'L' + pre.leg : '') : 'R' + (pre.round || 1),
+        rest: x01 ? (r.legOver || r.gameOver ? 0 : p.rest) : null });
+      if (s.log.length > 200) s.log.shift();
+      s.turnBust = false;
+    }
     return {
       get state() { return s; }, engine: E,
       dump() { return { kind, players, opts, s, hist: hist.slice(-80) }; }, // do zapisu – gra przetrwa odświeżenie strony
       dart(hit) {
         if (s.done || s.awaitNext) return null;
         hist.push(clone(s));
+        const pre = { leg: s.leg, round: s.round };
         const r = E.dart(s, hit) || {};
-        if (r.turnOver) s.awaitNext = true;
+        if (r.bust) s.turnBust = true;
+        if (r.turnOver) { s.awaitNext = true; logTurn(pre, r); }
         s.lastMsg = r.msg || '';
         return r;
       },
       nextPlayer() { // po wyjęciu lotek
         if (s.done) return null;
         hist.push(clone(s));
+        if (!s.awaitNext && s.turn.length) logTurn({ leg: s.leg, round: s.round }, {}); // „Dalej” przed 3. rzutką
         s.awaitNext = false; s.turn = [];
         let msg = null;
         if (s.nextOverride != null) { s.cur = s.nextOverride; s.nextOverride = null; }

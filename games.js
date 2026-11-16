@@ -195,6 +195,15 @@ const Games = (() => {
         return msg;
       },
       undo() { if (hist.length) s = hist.pop(); },
+      replaceAt(i, hit) { // korekta dowolnej rzutki bieżącej kolejki (hit = null → usuń rzutkę)
+        const n = s.turn.length; if (i < 0 || i >= n || hist.length < n - i) return null;
+        const later = s.turn.slice(i + 1);
+        for (let k = 0; k < n - i; k++) s = hist.pop();
+        s.awaitNext = false;
+        let r = {};
+        for (const h of (hit ? [hit] : []).concat(later)) { if (s.done || s.awaitNext) break; r = this.dart(h) || r; }
+        return r;
+      },
       replaceLast(hit) { // korekta ostatniej rzutki
         if (!s.turn.length || !hist.length) return;
         s = hist.pop(); s.awaitNext = false;

@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#101614">
 <title>Dart Licznik</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -134,6 +134,7 @@
       <div class="turn-slots" id="slots"></div>
       <div id="status" class="status">Rzucaj!</div>
     </div>
+    <div class="keypad" id="kp-inline" hidden></div>
     <div class="actions">
       <button class="btn" id="a-manual">✍ Wpisz</button>
       <button class="btn" id="a-miss">Pudło</button>
@@ -183,9 +184,8 @@
   </dialog>
 
   <dialog id="dlg-board" class="sheet">
-    <div class="dlg-head"><strong id="dlg-title">Dotknij miejsce trafienia</strong><button class="icon-btn" data-close aria-label="Zamknij">✕</button></div>
-    <div id="dlg-svg"></div>
-    <div class="row quick"><button class="btn" data-q="0">Pudło</button><button class="btn" data-q="25">25</button><button class="btn" data-q="BULL">Bull</button></div>
+    <div class="dlg-head"><strong id="dlg-title">Wpisz trafienie</strong><button class="icon-btn" data-close aria-label="Zamknij">✕</button></div>
+    <div class="keypad" id="kp-dlg"></div>
   </dialog>
 
   <dialog id="dlg-pair" class="sheet">

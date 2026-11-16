@@ -3,7 +3,7 @@
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
   const store = { get(k, d) { try { const v = localStorage.getItem('dart.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
                   set(k, v) { try { localStorage.setItem('dart.' + k, JSON.stringify(v)); } catch {} } };
-  const VERSION = '8'; // przy każdej aktualizacji podbić też CACHE w sw.js
+  const VERSION = '9'; // przy każdej aktualizacji podbić też CACHE w sw.js
   $$('.ver').forEach(e => e.textContent = 'wersja ' + VERSION);
   const GEAR = $('[data-settings] svg').outerHTML;
   $$('[data-settings]').forEach(b => { b.innerHTML = GEAR; b.onclick = openSettings; });
@@ -239,6 +239,7 @@
     if (!keep || !match) match = Games.Match(cfg.kind, players.slice(), gameOpts());
     turnDarts = []; pend = null;
     show('scr-play'); $('#play-stage').hidden = !withCam; $('.play-main').classList.toggle('nocam', !withCam);
+    $('#scr-play').classList.toggle('nocam', !withCam); $('#kp-inline').hidden = withCam; $('.actions').hidden = !withCam; kpInline.reset();
     $('#g-title').textContent = match.title();
     $('#g-pair').textContent = Pair.connected() && Pair.role === 'host' ? '🔗 2 kamery' : '';
     if (withCam) { Vision.start(onVision); playLoop(); }
@@ -256,7 +257,7 @@
     $('#board-view').innerHTML = match.view().map(r => `<div class="ps${r.active ? ' active' : ''}"><span class="nm">${esc(r.name)}</span><span class="big">${r.big}</span>
       <span class="sub">${r.sub}</span>${r.hint ? `<span class="hint">Zejście: ${r.hint}</span>` : ''}</div>`).join('');
     const t = st.turn || [], sum = t.reduce((a, h) => a + h.value, 0);
-    $('#slots').innerHTML = [0, 1, 2].map(i => t[i] ? `<div class="slot" data-s="${i}">${t[i].label}</div>` : `<div class="slot empty" data-s="${i}">rzutka ${i + 1}</div>`).join('') + `<div class="slot sum">${sum}</div>`;
+    $('#slots').innerHTML = [0, 1, 2].map(i => t[i] ? `<button class="slot" data-s="${i}" aria-label="Popraw rzutkę ${i + 1}">${t[i].label}<span class="edit">✎</span></button>` : `<div class="slot empty" data-s="${i}">rzutka ${i + 1}</div>`).join('') + `<div class="slot sum">${sum}</div>`;
     mirror(); persist();
   }
   function mirror() {
@@ -264,21 +265,22 @@
   }
   function addHit(hit) {
     if (!match || match.state.done) return;
-    if (match.state.awaitNext) { setStatus('Wyjmij lotki albo naciśnij „Dalej”', 'take'); return; }
+    if (match.state.awaitNext) { setStatus(useCam ? 'Wyjmij lotki albo naciśnij „Dalej”' : 'Naciśnij „Dalej”', 'take'); return; }
     const r = match.dart(hit); if (!r) return;
     say(speakHit(hit)); render(); afterDart(r);
   }
   function afterDart(r) {
     const st = match.state;
     if (r.gameOver) { setStatus(r.msg, 'win'); say(r.msg.replace('🏆', '')); return endGame(); }
-    if (r.bust) { setStatus('BUST! Wyjmij lotki', 'bust'); say('bust'); return; }
-    if (r.legOver) { setStatus(r.msg + ' Wyjmij lotki', 'win'); say(r.msg); return; }
+    if (r.bust) { setStatus(useCam ? 'BUST! Wyjmij lotki' : 'BUST! Dalej → następny gracz', 'bust'); say('bust'); return; }
+    if (r.legOver) { setStatus(r.msg + (useCam ? ' Wyjmij lotki' : ''), 'win'); say(r.msg); return; }
     if (r.turnOver) {
       const sum = st.turn.reduce((a, h) => a + h.value, 0);
-      setStatus(`${sum} pkt – wyjmij lotki`, 'take'); if (st.kind === 'x01' || st.kind === 'high') setTimeout(() => say(String(sum)), 900); return;
+      setStatus(takeMsg(`${sum} pkt`), 'take'); if (st.kind === 'x01' || st.kind === 'high') setTimeout(() => say(String(sum)), 900); return;
     }
     setStatus(r.msg || `${st.players[st.cur].name} – rzutka ${st.turn.length + 1}`);
   }
+  function takeMsg(t) { return useCam ? t + ' – wyjmij lotki' : t + ' – wpisz kolejną rzutkę lub „Dalej”'; }
   function next() {
     if (!match) return;
     const msg = match.nextPlayer(); render();
@@ -333,26 +335,78 @@
     requestAnimationFrame(playLoop);
   }
 
-  // ręczne wpisywanie / korekta
-  const dlg = $('#dlg-board');
-  $('#dlg-svg').innerHTML = Board.svg(Math.min(460, innerWidth - 60));
-  function openBoard(slot) { editSlot = slot; $('#dlg-title').textContent = slot >= 0 ? `Popraw rzutkę ${slot + 1}` : 'Dotknij miejsce trafienia'; dlg.showModal(); }
-  function chooseHit(hit) {
-    dlg.close();
-    const st = match.state;
-    if (editSlot >= 0 && editSlot === st.turn.length - 1) { const r = match.replaceLast(hit); render(); if (r) afterDart(r); }
-    else if (editSlot >= 0 && editSlot < st.turn.length) setStatus('Poprawić można ostatnią rzutkę – wcześniejsze cofnij', 'take');
-    else addHit(hit);
+  // ---------- klawiatura trafień: [D/T] + liczba; 3–9 od razu, „1”/„2” czeka na drugą cyfrę ----------
+  function Keypad(el, { onHit, onPending, mode }) {
+    let mult = 1, pend = null, timer = 0;
+    const K = (k, txt, cls = '') => `<button class="kp ${cls}" data-k="${k}">${txt}</button>`;
+    el.innerHTML = K(1, 1) + K(2, 2) + K(3, 3) + K('D', 'D<small>podwójne</small>', 'mod') +
+      K(4, 4) + K(5, 5) + K(6, 6) + K('T', 'T<small>potrójne</small>', 'mod') +
+      K(7, 7) + K(8, 8) + K(9, 9) + K(25, '25<small>D+25 = Bull</small>', 'mod') +
+      (mode === 'inline' ? K('U', '↶<small>cofnij</small>', 'fn') + K(0, '0<small>pudło</small>') + K('N', 'Dalej →', 'primary span2')
+                         : K(0, '0<small>pudło</small>', 'span2') + K('X', '✕ Usuń rzutkę', 'fn danger span2'));
+    const paint = () => {
+      el.querySelectorAll('.mod').forEach(b => b.classList.toggle('on', (b.dataset.k === 'D' && mult === 2) || (b.dataset.k === 'T' && mult === 3)));
+      onPending && onPending(pend ? (mult === 3 ? 'T' : mult === 2 ? 'D' : '') + pend + '…' : mult > 1 ? (mult === 3 ? 'T' : 'D') + ' …' : '');
+    };
+    const commit = (num) => {
+      clearTimeout(timer);
+      const hit = num === 0 ? Board.fromLabel('0') : num === 25 ? Board.fromLabel(mult === 2 ? 'BULL' : '25') : Board.fromLabel((mult === 3 ? 'T' : mult === 2 ? 'D' : '') + num);
+      mult = 1; pend = null; paint(); onHit(hit);
+    };
+    const flushPend = () => { if (pend) commit(+pend); };
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('.kp'); if (!b) return;
+      if (navigator.vibrate) navigator.vibrate(12);
+      const k = b.dataset.k;
+      if (k === 'D' || k === 'T') { flushPend(); const m = k === 'T' ? 3 : 2; mult = mult === m ? 1 : m; return paint(); }
+      if (k === 'U') { if (pend || mult > 1) { clearTimeout(timer); pend = null; mult = 1; return paint(); } return undoDart(); }
+      if (k === 'N') { flushPend(); return next(); }
+      if (k === 'X') return onHit(null);
+      if (k === '25') { flushPend(); if (mult === 3) { mult = 1; paint(); return setStatus('Nie ma potrójnego bulla', 'take'); } return commit(25); }
+      const d = +k;
+      if (pend === '1') return commit(10 + d);
+      if (pend === '2') { if (d === 0) return commit(20); commit(2); }
+      if (d === 0) return commit(0);
+      if (d >= 3) return commit(d);
+      pend = String(d); paint(); clearTimeout(timer); timer = setTimeout(flushPend, 1300); // 1 lub 2 bez drugiej cyfry
+    });
+    return { reset() { clearTimeout(timer); mult = 1; pend = null; paint(); } };
   }
-  $('#dlg-svg').addEventListener('click', (e) => {
-    const svg = e.currentTarget.querySelector('svg'), pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
-    const p = pt.matrixTransform(svg.getScreenCTM().inverse()); chooseHit(Board.score(p.x, -p.y));
+  let pendingTxt = '';
+  const kpInline = Keypad($('#kp-inline'), {
+    mode: 'inline',
+    onPending: (t) => { pendingTxt = t; const e = $('#slots .slot.empty'); if (e) { e.textContent = t || `rzutka ${+e.dataset.s + 1}`; e.classList.toggle('pending', !!t); } },
+    onHit: (hit) => { if (match.state.awaitNext) next(); addHit(hit); } // kolejna liczba po pełnej kolejce = następny gracz
   });
-  $$('[data-q]').forEach(b => b.onclick = () => chooseHit(Board.fromLabel(b.dataset.q)));
-  $('#slots').addEventListener('click', (e) => { const s = e.target.closest('.slot[data-s]'); if (s) openBoard(+s.dataset.s); });
-  $('#a-manual').onclick = () => openBoard(-1);
+  const dlg = $('#dlg-board');
+  const kpDlg = Keypad($('#kp-dlg'), {
+    mode: 'dlg',
+    onPending: (t) => { $('#dlg-title').textContent = (editSlot >= 0 ? `Popraw rzutkę ${editSlot + 1}` : 'Wpisz trafienie') + (t ? ': ' + t : ''); },
+    onHit: (hit) => {
+      dlg.close();
+      if (editSlot < 0) { if (hit) addHit(hit); return; }
+      const st = match.state, n = st.turn.length, idx = turnDarts.length - n + editSlot;
+      const r = match.replaceAt(editSlot, hit); if (!r) return;
+      if (useCam && idx >= 0 && turnDarts[idx]) { if (hit) turnDarts[idx].score = hit; else turnDarts.splice(idx, 1); }
+      render(); afterDart(r); if (!hit) setStatus('Usunięto rzutkę');
+    }
+  });
+  function openKeypad(slot) {
+    editSlot = slot >= 0 && slot < match.state.turn.length ? slot : -1;
+    if (editSlot < 0 && match.state.awaitNext) return setStatus('Kolejka pełna – dotknij rzutkę, aby ją poprawić', 'take');
+    $('#kp-dlg [data-k=X]').hidden = editSlot < 0; $('#kp-dlg [data-k="0"]').classList.toggle('span4', editSlot < 0);
+    kpDlg.reset(); dlg.showModal();
+  }
+  dlg.addEventListener('close', () => kpDlg.reset());
+  function undoDart() { match.undo(); turnDarts.pop(); render(); setStatus('Cofnięto'); if (useCam) Vision.resetReference(false); Pair.send({ t: 'reset' }); }
+  $('#slots').addEventListener('click', (e) => {
+    const s = e.target.closest('.slot[data-s]'); if (!s) return;
+    if (!useCam && s.classList.contains('empty')) return; // bez kamery wpisuje się klawiaturą poniżej
+    openKeypad(+s.dataset.s);
+  });
+  $('#a-manual').onclick = () => openKeypad(-1);
   $('#a-miss').onclick = () => addHit(Board.fromLabel('0'));
-  $('#a-undo').onclick = () => { match.undo(); turnDarts.pop(); render(); setStatus('Cofnięto'); if (useCam) Vision.resetReference(false); Pair.send({ t: 'reset' }); };
+  $('#a-undo').onclick = undoDart;
   $('#a-next').onclick = next;
   $('#g-menu').onclick = () => { $('#m-recal').hidden = !useCam; $('#dlg-menu').showModal(); };
   $('#m-recal').onclick = () => { $('#dlg-menu').close(); Vision.stop(); keepMatch = true; openCamera(); }; // ta sama gra po kalibracji
@@ -455,6 +509,18 @@
   }
   $('#r-recal').onclick = () => { Vision.stop(); openCamera('remote'); };
   $('#r-leave').onclick = () => { Pair.close(); home(); };
+
+  // wysokość aplikacji = faktycznie widoczny obszar (Android potrafi po starcie podać wysokość razem z paskiem nawigacji)
+  function fitHeight() {
+    const hs = [window.innerHeight, document.documentElement.clientHeight];
+    if (window.visualViewport) hs.push(Math.round(visualViewport.height * visualViewport.scale));
+    const h = Math.min(...hs.filter(x => x > 100));
+    if (isFinite(h)) document.documentElement.style.setProperty('--app-h', h + 'px');
+  }
+  ['resize', 'orientationchange', 'pageshow', 'focus'].forEach(ev => window.addEventListener(ev, () => { fitHeight(); setTimeout(fitHeight, 250); }));
+  if (window.visualViewport) visualViewport.addEventListener('resize', fitHeight);
+  document.addEventListener('visibilitychange', () => setTimeout(fitHeight, 100));
+  [0, 100, 400, 1000, 2500].forEach(t => setTimeout(fitHeight, t));
 
   // ekran nie gaśnie w trakcie gry
   async function requestWake() { try { await navigator.wakeLock.request('screen'); } catch {} }

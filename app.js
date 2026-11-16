@@ -3,12 +3,19 @@
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
   const store = { get(k, d) { try { const v = localStorage.getItem('dart.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
                   set(k, v) { try { localStorage.setItem('dart.' + k, JSON.stringify(v)); } catch {} } };
-  const VERSION = '4'; // przy każdej aktualizacji podbić też CACHE w sw.js
+  const VERSION = '5'; // przy każdej aktualizacji podbić też CACHE w sw.js
   $$('.ver').forEach(e => e.textContent = 'wersja ' + VERSION);
   const GEAR = $('[data-settings] svg').outerHTML;
   $$('[data-settings]').forEach(b => { b.innerHTML = GEAR; b.onclick = openSettings; });
   let screen = 'scr-home';
-  const show = (id) => { screen = id; $$('.screen').forEach(s => s.hidden = s.id !== id); window.scrollTo(0, 0); };
+  const show = (id) => { screen = id; $$('.screen').forEach(s => s.hidden = s.id !== id); window.scrollTo(0, 0); persist(); };
+  // zapis stanu na bieżąco: odświeżenie strony (np. przypadkowe przeciągnięcie) wraca w to samo miejsce
+  function persist() {
+    store.set('cfg', cfg); store.set('players', players);
+    store.set('session', { screen, step, useCam, calMode });
+    if (match && !match.state.done && (screen === 'scr-play' || screen === 'scr-camera')) store.set('match', match.dump());
+    else if (screen !== 'scr-camera') localStorage.removeItem('dart.match');
+  }
   const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   // ---------- ustawienia (tylko pod ikoną ⚙) ----------
@@ -52,7 +59,7 @@
 
   // ---------- START ----------
   function home() {
-    Vision.stop(); show('scr-home');
+    Vision.stop(); match = null; show('scr-home');
     const has = store.get('cfg', null);
     $('#home-again').hidden = !has; if (has) $('#home-again').textContent = '↻ Zagraj ponownie: ' + gameLabel();
   }
@@ -87,6 +94,7 @@
     $$('#o-hi-rounds button').forEach(b => b.classList.toggle('on', +b.dataset.v === cfg.hiRounds));
     $$('.stepper').forEach(s => s.querySelector('output').textContent = cfg[s.dataset.id]);
     $('#o-dout').checked = cfg.doubleOut; $('#o-din').checked = cfg.doubleIn; $('#o-skip').checked = cfg.multSkip;
+    persist();
   }
   $('#game-cards').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; cfg.kind = b.dataset.k; if (b.dataset.start) cfg.start = +b.dataset.start; renderGame(); };
   $('#o-start').onclick = (e) => { const b = e.target.closest('button'); if (b) { cfg.start = +b.dataset.v; renderGame(); } };
@@ -97,9 +105,9 @@
     const k = s.dataset.id, d = b.textContent === '+' ? 1 : -1;
     cfg[k] = Math.min(+s.dataset.max, Math.max(+s.dataset.min, cfg[k] + d)); renderGame();
   });
-  $('#o-dout').onchange = (e) => cfg.doubleOut = e.target.checked;
-  $('#o-din').onchange = (e) => cfg.doubleIn = e.target.checked;
-  $('#o-skip').onchange = (e) => cfg.multSkip = e.target.checked;
+  $('#o-dout').onchange = (e) => { cfg.doubleOut = e.target.checked; persist(); };
+  $('#o-din').onchange = (e) => { cfg.doubleIn = e.target.checked; persist(); };
+  $('#o-skip').onchange = (e) => { cfg.multSkip = e.target.checked; persist(); };
 
   // krok 2: gracze
   function renderPlayers() {
@@ -109,8 +117,9 @@
     const free = recent.filter(r => !players.includes(r));
     $('#recent').innerHTML = free.map(r => `<button class="chip" data-r="${esc(r)}">+ ${esc(r)}</button>`).join('');
     $('#add-player').hidden = players.length >= 8;
+    persist();
   }
-  $('#players').oninput = (e) => { if (e.target.dataset.i) players[+e.target.dataset.i] = e.target.value; };
+  $('#players').oninput = (e) => { if (e.target.dataset.i) { players[+e.target.dataset.i] = e.target.value; persist(); } };
   $('#players').onclick = (e) => { const d = e.target.closest('[data-del]'); if (d) { players.splice(+d.dataset.del, 1); renderPlayers(); } };
   $('#players').onfocusin = (e) => { if (e.target.tagName === 'INPUT' && /^Gracz \d+$/.test(e.target.value)) e.target.select(); };
   $('#add-player').onclick = () => { players.push('Gracz ' + (players.length + 1)); renderPlayers(); const ins = $$('#players input'); ins[ins.length - 1].focus(); };
@@ -125,11 +134,11 @@
   function renderCams() {
     $$('#cam-choice button').forEach(b => b.classList.toggle('on', b.dataset.c === cfg.cams));
     $('#two-panel').hidden = cfg.cams !== 'two';
-    pairState();
+    pairState(); persist();
   }
   $('#cam-choice').onclick = (e) => { const b = e.target.closest('button'); if (b) { cfg.cams = b.dataset.c; renderWizard(); } };
 
-  function launch() { saveCfg(); if (cfg.cams === 'none') return startMatch(false); openCamera(); }
+  function launch() { saveCfg(); match = null; keepMatch = false; if (cfg.cams === 'none') return startMatch(false); openCamera(); }
 
   // ---------- KALIBRACJA ----------
   const video = $('#video'), ov = $('#overlay'), octx = ov.getContext('2d');
@@ -189,33 +198,45 @@
     }
   }
   $('#cal-reset').onclick = () => { calPts = []; recomputeH(); calMsg(); };
-  $('#cal-back').onclick = () => { if (calMode === 'remote') { Pair.close(); home(); } else wizard(2); };
+  $('#cal-back').onclick = async () => {
+    if (calMode === 'remote') { Pair.close(); return home(); }
+    if (keepMatch && match) { // wróć do trwającej gry bez zmiany kalibracji
+      keepMatch = false;
+      if (calPts.length === 4) { await lockNow(); Vision.setCalibration(calPts, vw, vh); return startMatch(true, true); }
+      return startMatch(false, true);
+    }
+    wizard(2);
+  };
   $('#cal-ok').onclick = async () => {
     store.set('cal', { vw, vh, pts: calPts });
     $('#cal-ok').disabled = true;
+    if (settings.lock) $('#cal-msg').textContent = 'Ustawiam ostrość na środek tarczy i ją blokuję… nie ruszaj telefonu.';
+    await lockNow();
+    $('#cal-ok').disabled = false;
+    Vision.setCalibration(calPts, vw, vh);
+    if (calMode === 'remote') return startRemote();
+    startMatch(true, keepMatch); keepMatch = false;
+  };
+  async function lockNow() {
     let txt = '';
     if (settings.lock) {
-      $('#cal-msg').textContent = 'Ustawiam ostrość na środek tarczy i ją blokuję… nie ruszaj telefonu.';
       const lock = await Vision.lockCamera(Vision.apply(Hb2i, 0, 0));
       txt = lock.focus === 'zablokowana' ? '🔒 Ostrość zablokowana' : lock.focus === 'ustawiona raz' ? '🔒 Ostrość ustawiona' : '⚠ Bez blokady ostrości';
       txt += (lock.exposure ? ' · ekspozycja' : '') + (lock.wb ? ' · balans bieli' : '');
     }
     $('#cam-lock').textContent = $('#r-lock').textContent = txt;
-    $('#cal-ok').disabled = false;
-    Vision.setCalibration(calPts, vw, vh);
-    if (calMode === 'remote') return startRemote();
-    startMatch(true);
-  };
+  }
 
   // ---------- GRA ----------
-  let match = null, useCam = false, turnDarts = [], editSlot = -1;
+  let match = null, useCam = false, turnDarts = [], editSlot = -1, keepMatch = false;
   const pc = $('#play-canvas'), pctx = pc.getContext('2d');
   function say(t) { if (!settings.voice || !window.speechSynthesis) return; const u = new SpeechSynthesisUtterance(t); u.lang = 'pl-PL'; speechSynthesis.cancel(); speechSynthesis.speak(u); }
   function speakHit(h) { return h.mult === 0 ? 'pudło' : h.num === 25 ? (h.mult === 2 ? 'bull' : 'dwadzieścia pięć') : (h.mult === 3 ? 'potrójne ' : h.mult === 2 ? 'podwójne ' : '') + h.num; }
 
-  function startMatch(withCam) {
+  function startMatch(withCam, keep) {
     useCam = withCam;
-    match = Games.Match(cfg.kind, players.slice(), gameOpts()); turnDarts = []; pend = null;
+    if (!keep || !match) match = Games.Match(cfg.kind, players.slice(), gameOpts());
+    turnDarts = []; pend = null;
     show('scr-play'); $('#play-stage').hidden = !withCam; $('.play-grid').classList.toggle('nocam', !withCam);
     $('#g-title').textContent = match.title();
     $('#g-pair').textContent = Pair.connected() && Pair.role === 'host' ? '🔗 2 kamery' : '';
@@ -230,7 +251,7 @@
       <span class="sub">${r.sub}</span>${r.hint ? `<span class="hint">Zejście: ${r.hint}</span>` : ''}</div>`).join('');
     const t = st.turn || [], sum = t.reduce((a, h) => a + h.value, 0);
     $('#slots').innerHTML = [0, 1, 2].map(i => t[i] ? `<div class="slot" data-s="${i}">${t[i].label}</div>` : `<div class="slot empty" data-s="${i}">rzutka ${i + 1}</div>`).join('') + `<div class="slot sum">${sum}</div>`;
-    mirror();
+    mirror(); persist();
   }
   function mirror() {
     if (Pair.role === 'host' && Pair.connected() && match) Pair.send({ t: 'view', rows: match.view(), turn: (match.state.turn || []).map(h => h.label), status: $('#status').textContent });
@@ -328,12 +349,12 @@
   $('#a-undo').onclick = () => { match.undo(); turnDarts.pop(); render(); setStatus('Cofnięto'); if (useCam) Vision.resetReference(false); Pair.send({ t: 'reset' }); };
   $('#a-next').onclick = next;
   $('#g-menu').onclick = () => { $('#m-recal').hidden = !useCam; $('#dlg-menu').showModal(); };
-  $('#m-recal').onclick = () => { $('#dlg-menu').close(); Vision.stop(); openCamera(); };
+  $('#m-recal').onclick = () => { $('#dlg-menu').close(); Vision.stop(); keepMatch = true; openCamera(); }; // ta sama gra po kalibracji
   $('#m-restart').onclick = () => { $('#dlg-menu').close(); if (useCam) Vision.setCalibration(calPts, vw, vh); startMatch(useCam); };
   $('#m-end').onclick = () => { $('#dlg-menu').close(); home(); };
 
   function endGame() {
-    Vision.stop();
+    Vision.stop(); localStorage.removeItem('dart.match');
     $('#end-title').textContent = `🏆 ${match.state.winner} wygrywa!`;
     $('#end-table').innerHTML = `<table><tr><th>Gracz</th><th>Wynik</th><th></th></tr>${match.view().map(r => `<tr><td>${esc(r.name)}</td><td>${r.big}</td><td class="muted">${r.sub}</td></tr>`).join('')}</table>`;
     $('#dlg-end').showModal();
@@ -438,5 +459,37 @@
     if (dev) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
     else navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-  home();
+
+  // ---------- wznowienie po odświeżeniu / ponownym otwarciu ----------
+  async function resumeCamera() {
+    keepMatch = true; calMode = 'host';
+    show('scr-camera'); $('#cal-msg').textContent = 'Wznawiam grę…'; $('#cal-ok').disabled = true;
+    try {
+      const d = await Vision.startCamera(video); vw = d.w; vh = d.h; cameraOn = true;
+      const savedCal = store.get('cal', null);
+      if (!savedCal || savedCal.vw !== vw || savedCal.vh !== vh) return openCamera(); // trzeba skalibrować, gra zostaje
+      calPts = savedCal.pts; recomputeH();
+      await lockNow(); Vision.setCalibration(calPts, vw, vh); requestWake();
+      keepMatch = false; startMatch(true, true);
+      setStatus(`Wznowiono grę – rzuca ${match.state.players[match.state.cur].name}` + (cfg.cams === 'two' ? ' (druga kamera rozłączona)' : ''));
+    } catch { keepMatch = false; startMatch(false, true); setStatus('Wznowiono grę bez kamery'); }
+  }
+  function restore() {
+    $$('.screen').forEach(s => s.hidden = true);
+    const ses = store.get('session', null), saved = store.get('match', null);
+    if (!ses) return home();
+    calMode = ses.calMode || 'host';
+    if (ses.screen === 'scr-new') return wizard(ses.step || 0);
+    if (ses.screen === 'scr-remote' || calMode === 'remote') {
+      home(); $('#home-remote').textContent = '📷 Połączenie przerwane – dołącz ponownie jako druga kamera'; return;
+    }
+    if ((ses.screen === 'scr-play' || ses.screen === 'scr-camera') && saved) {
+      match = Games.Match(saved.kind, saved.players, saved.opts, saved);
+      if (ses.screen === 'scr-camera' || ses.useCam) return resumeCamera();
+      startMatch(false, true); return setStatus(`Wznowiono grę – rzuca ${match.state.players[match.state.cur].name}`);
+    }
+    if (ses.screen === 'scr-camera') return launch(); // kalibracja nowej gry
+    home();
+  }
+  restore();
 })();

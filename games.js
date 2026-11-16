@@ -154,11 +154,12 @@ const Games = (() => {
   const ENGINES = { x01: X01, cricket: Cricket, atc: ATC, shanghai: Shanghai, high: High };
 
   // ---------- mecz: tury, historia do cofania ----------
-  function Match(kind, players, opts) {
+  function Match(kind, players, opts, saved) {
     const E = ENGINES[kind];
-    let s = E.init(players, opts); const hist = [];
+    let s = saved ? saved.s : E.init(players, opts); const hist = saved && saved.hist ? saved.hist : [];
     return {
       get state() { return s; }, engine: E,
+      dump() { return { kind, players, opts, s, hist: hist.slice(-80) }; }, // do zapisu – gra przetrwa odświeżenie strony
       dart(hit) {
         if (s.done || s.awaitNext) return null;
         hist.push(clone(s));

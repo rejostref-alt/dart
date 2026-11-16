@@ -3,7 +3,7 @@
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
   const store = { get(k, d) { try { const v = localStorage.getItem('dart.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
                   set(k, v) { try { localStorage.setItem('dart.' + k, JSON.stringify(v)); } catch {} } };
-  const VERSION = '10'; // przy każdej aktualizacji podbić też CACHE w sw.js
+  const VERSION = '11'; // przy każdej aktualizacji podbić też CACHE w sw.js
   const GEAR = $('[data-settings] svg').outerHTML;
   $$('[data-settings]').forEach(b => { b.innerHTML = GEAR; b.onclick = openSettings; });
   let screen = 'scr-home';
@@ -299,6 +299,7 @@
   const curName = () => match.state.players[match.state.cur].name;
   // sędzia na początku kolejki: imię, a w X01 – „potrzebujesz X”, gdy jest zejście
   function announcePlayer(first) {
+    if (!match || screen !== 'scr-play') return;
     const st = match.state, p = st.players[st.cur];
     if (first) return Caller.gameOn(p.name);
     if (st.kind === 'x01' && p.rest <= 170 && Games.checkout(p.rest, 3, st.o.doubleOut)) Caller.require(p.name, p.rest);

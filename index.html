@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f1513">
+<meta name="theme-color" content="#101614">
 <title>Dart Licznik</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
@@ -12,107 +12,176 @@
 <body>
 <main id="app">
 
-  <!-- 1. USTAWIENIA GRY -->
-  <section id="scr-setup" class="screen">
-    <header class="top"><h1>🎯 Dart Licznik</h1><span class="muted small ver"></span></header>
-    <div class="card">
-      <h2>Gracze</h2>
-      <div id="players"></div>
-      <button class="btn ghost" id="add-player">+ Dodaj gracza</button>
+  <!-- START -->
+  <section id="scr-home" class="screen home">
+    <header class="bar">
+      <span class="brand"><img src="icon-192.png" alt="" width="34" height="34"> Dart Licznik</span>
+      <button class="icon-btn" data-settings aria-label="Ustawienia"><svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm7.43-2.53c.04-.32.07-.64.07-.97s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.69-.98l-.38-2.65A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65c-.61.25-1.17.58-1.69.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.65.07.97l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.49.42h4c.24 0 .45-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.22.08.49 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65Z"/></svg></button>
+    </header>
+    <div class="hero">
+      <div class="hero-board" aria-hidden="true"></div>
+      <h1>Gotowy do gry?</h1>
+      <p class="muted">Telefon na statywie liczy punkty za Ciebie. Działa bez internetu.</p>
     </div>
-    <div class="card">
-      <h2>Gra</h2>
-      <div class="seg" id="game-kind">
-        <button data-k="x01" class="on">301 / 501</button>
-        <button data-k="cricket">Cricket</button>
-        <button data-k="atc">Po kolei</button>
-        <button data-k="shanghai">Shanghai</button>
-        <button data-k="high">High Score</button>
-      </div>
-      <div id="opts-x01" class="opts">
-        <label>Start <select id="o-start"><option>301</option><option selected>501</option><option>701</option></select></label>
-        <label>Legi do wygrania <select id="o-legs"></select></label>
-        <label>Sety do wygrania <select id="o-sets"></select></label>
-        <label class="chk"><input type="checkbox" id="o-dout" checked> Double out (kończ na podwójnym)</label>
-        <label class="chk"><input type="checkbox" id="o-din"> Double in (zacznij od podwójnego)</label>
-      </div>
-      <div id="opts-atc" class="opts" hidden>
-        <label class="chk"><input type="checkbox" id="o-skip"> Podwójne/potrójne przeskakują o 2/3 pola</label>
-      </div>
-      <div id="opts-shanghai" class="opts" hidden>
-        <label>Liczba rund <select id="o-sh-rounds"><option>7</option><option>10</option><option>20</option></select></label>
-      </div>
-      <div id="opts-high" class="opts" hidden>
-        <label>Liczba rund <select id="o-hi-rounds"><option>5</option><option selected>10</option><option>20</option></select></label>
-      </div>
-      <div id="opts-cricket" class="opts" hidden><p class="muted small">Pola 15–20 i bull. Zamknij wszystkie i miej co najmniej tyle punktów, co rywale.</p></div>
-    </div>
-    <div class="card">
-      <h2>Druga kamera <span class="muted small">(opcjonalnie)</span></h2>
-      <p class="muted small">Dwa telefony na jednej tarczy: lewy i prawy, pod lekkim kątem. Oba muszą być w tej samej sieci Wi‑Fi – wystarczy hotspot z jednego telefonu, internet nie jest potrzebny.</p>
-      <div class="row wrap">
-        <button class="btn" id="pair-host">Paruj drugi telefon</button>
-        <button class="btn ghost" id="pair-join">Ten telefon to druga kamera</button>
-      </div>
-      <p id="pair-state" class="small muted">Nie sparowano</p>
-    </div>
-    <div class="row">
-      <button class="btn primary" id="go-camera">Dalej: kamera →</button>
-      <button class="btn ghost" id="go-manual">Graj bez kamery</button>
+    <div class="home-actions">
+      <button class="btn primary xl" id="home-new">Nowa gra</button>
+      <button class="btn xl ghost" id="home-again" hidden></button>
+      <button class="link" id="home-remote">📷 Ten telefon to druga kamera</button>
     </div>
   </section>
 
-  <!-- 2. KAMERA I KALIBRACJA -->
-  <section id="scr-camera" class="screen" hidden>
+  <!-- KREATOR NOWEJ GRY -->
+  <section id="scr-new" class="screen">
+    <header class="bar">
+      <button class="icon-btn" id="w-back" aria-label="Wstecz">←</button>
+      <div class="steps" id="w-steps"><span></span><span></span><span></span></div>
+      <button class="icon-btn" data-settings aria-label="Ustawienia">⚙</button>
+    </header>
+
+    <div class="step" data-step="0">
+      <h2 class="step-title">Wybierz grę</h2>
+      <div class="games" id="game-cards">
+        <button data-k="x01" data-start="501"><b>501</b><small>Zejdź do zera</small></button>
+        <button data-k="x01" data-start="301"><b>301</b><small>Krótsza wersja</small></button>
+        <button data-k="cricket"><b>Cricket</b><small>Pola 15–20 i bull</small></button>
+        <button data-k="atc"><b>Po kolei</b><small>1 → 20 → bull</small></button>
+        <button data-k="shanghai"><b>Shanghai</b><small>Runda = cel</small></button>
+        <button data-k="high"><b>High Score</b><small>Najwięcej punktów</small></button>
+      </div>
+      <div class="card opts" id="opts-x01">
+        <div class="opt-row"><span>Start</span><div class="seg small" id="o-start"><button data-v="301">301</button><button data-v="501">501</button><button data-v="701">701</button></div></div>
+        <div class="opt-row"><span>Legi do wygrania</span><div class="stepper" data-id="legs" data-min="1" data-max="11"><button>−</button><output>1</output><button>+</button></div></div>
+        <div class="opt-row"><span>Sety do wygrania</span><div class="stepper" data-id="sets" data-min="1" data-max="7"><button>−</button><output>1</output><button>+</button></div></div>
+        <label class="opt-row"><span>Double out <small class="muted">kończ na podwójnym</small></span><input type="checkbox" class="switch" id="o-dout" checked></label>
+        <label class="opt-row"><span>Double in <small class="muted">zacznij od podwójnego</small></span><input type="checkbox" class="switch" id="o-din"></label>
+      </div>
+      <div class="card opts" id="opts-atc" hidden>
+        <label class="opt-row"><span>Podwójne i potrójne przeskakują <small class="muted">o 2 / 3 pola</small></span><input type="checkbox" class="switch" id="o-skip"></label>
+      </div>
+      <div class="card opts" id="opts-shanghai" hidden>
+        <div class="opt-row"><span>Liczba rund</span><div class="seg small" id="o-sh-rounds"><button data-v="7">7</button><button data-v="10">10</button><button data-v="20">20</button></div></div>
+      </div>
+      <div class="card opts" id="opts-high" hidden>
+        <div class="opt-row"><span>Liczba rund</span><div class="seg small" id="o-hi-rounds"><button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button></div></div>
+      </div>
+      <div class="card opts" id="opts-cricket" hidden><p class="muted small">Zamknij pola 15–20 i bull (po 3 trafienia). Punkty zdobywasz na polach zamkniętych przez siebie, a jeszcze otwartych u rywali.</p></div>
+    </div>
+
+    <div class="step" data-step="1" hidden>
+      <h2 class="step-title">Kto gra?</h2>
+      <div id="players" class="players"></div>
+      <button class="btn ghost" id="add-player">+ Dodaj gracza</button>
+      <div id="recent" class="chips"></div>
+    </div>
+
+    <div class="step" data-step="2" hidden>
+      <h2 class="step-title">Kamery</h2>
+      <div class="choices" id="cam-choice">
+        <button data-c="one"><span class="ico">📱</span><b>1 kamera</b><small>Telefon na statywie z przodu tarczy</small></button>
+        <button data-c="two"><span class="ico">📱📱</span><b>2 kamery</b><small>Drugi telefon z boku – dokładniej przy ciasnych rzutkach</small></button>
+        <button data-c="none"><span class="ico">✍</span><b>Bez kamery</b><small>Wpisuję trafienia na tarczy</small></button>
+      </div>
+      <div class="card" id="two-panel" hidden>
+        <p class="small muted">Oba telefony w tej samej sieci Wi‑Fi – wystarczy hotspot z jednego z nich, internet nie jest potrzebny.</p>
+        <button class="btn" id="pair-host">Połącz drugi telefon</button>
+        <p id="pair-state" class="small muted">Nie połączono</p>
+      </div>
+    </div>
+
+    <footer class="wizard-foot">
+      <button class="btn primary xl" id="w-next">Dalej</button>
+    </footer>
+  </section>
+
+  <!-- KALIBRACJA -->
+  <section id="scr-camera" class="screen">
+    <header class="bar">
+      <button class="icon-btn" id="cal-back" aria-label="Wstecz">←</button>
+      <strong>Kalibracja</strong>
+      <button class="icon-btn" data-settings aria-label="Ustawienia">⚙</button>
+    </header>
     <div class="stage" id="cal-stage">
       <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
     </div>
-    <div class="cal-bar">
-      <p id="cal-msg">Uruchamiam kamerę…</p>
-      <div class="row wrap">
-        <button class="btn ghost" id="cal-reset">Kalibruj od nowa</button>
-        <label class="btn ghost file">Nagranie testowe<input type="file" id="cal-file" accept="video/*" hidden></label>
-        <button class="btn ghost" id="cal-back">← Wróć</button>
-        <button class="btn primary" id="cal-ok" disabled>Start gry</button>
-      </div>
+    <p id="cal-msg" class="cal-msg">Uruchamiam kamerę…</p>
+    <div class="row">
+      <button class="btn ghost" id="cal-reset">Od nowa</button>
+      <button class="btn primary grow" id="cal-ok" disabled>Start gry</button>
     </div>
   </section>
 
-  <!-- 3. GRA -->
-  <section id="scr-play" class="screen" hidden>
-    <header class="top"><div><h2 id="g-title"></h2><span id="g-header" class="muted small"></span> <span id="g-pair" class="small"></span> <span class="muted small ver"></span></div>
-      <button class="icon" id="g-menu" aria-label="Menu">⋯</button></header>
+  <!-- GRA -->
+  <section id="scr-play" class="screen">
+    <header class="bar">
+      <button class="icon-btn" id="g-menu" aria-label="Menu gry">⋯</button>
+      <div class="bar-title"><strong id="g-title"></strong><span id="g-header" class="muted small"></span></div>
+      <button class="icon-btn" data-settings aria-label="Ustawienia">⚙</button>
+    </header>
     <div class="play-grid">
-      <div class="stage small" id="play-stage"><canvas id="play-canvas"></canvas><span id="cam-state" class="pill">Kamera</span><span id="cam-lock" class="pill lock"></span></div>
+      <div class="stage small" id="play-stage"><canvas id="play-canvas"></canvas><span id="cam-state" class="pill">Kamera</span><span id="g-pair" class="pill right"></span><span id="cam-lock" class="pill lock"></span></div>
       <div id="board-view" class="scores"></div>
     </div>
     <div class="turn">
       <div class="turn-slots" id="slots"></div>
       <div id="status" class="status">Rzucaj!</div>
     </div>
-    <div class="row wrap actions">
-      <button class="btn" id="a-manual">✍ Wpisz ręcznie</button>
+    <div class="actions">
+      <button class="btn" id="a-manual">✍ Wpisz</button>
       <button class="btn" id="a-miss">Pudło</button>
       <button class="btn" id="a-undo">↶ Cofnij</button>
-      <button class="btn primary" id="a-next">Następny gracz →</button>
+      <button class="btn primary" id="a-next">Dalej →</button>
     </div>
   </section>
 
-  <!-- 4. DRUGA KAMERA (tryb pomocniczy) -->
-  <section id="scr-remote" class="screen" hidden>
-    <header class="top"><div><h2>📷 Druga kamera</h2><span class="muted small ver"></span></div><span id="r-conn" class="pill ok" style="position:static">Połączono</span></header>
+  <!-- DRUGA KAMERA -->
+  <section id="scr-remote" class="screen">
+    <header class="bar">
+      <span class="brand">📷 Druga kamera</span>
+      <span id="r-conn" class="pill static ok">Połączono</span>
+      <button class="icon-btn" data-settings aria-label="Ustawienia">⚙</button>
+    </header>
     <div class="stage small" id="remote-stage"><canvas id="remote-canvas"></canvas><span id="r-cam" class="pill">Kamera</span><span id="r-lock" class="pill lock"></span></div>
     <div id="r-status" class="status">Wysyłam rzutki do głównego telefonu</div>
     <div id="r-board" class="scores"></div>
-    <div class="row wrap actions">
-      <button class="btn" id="r-recal">Kalibruj ponownie</button>
+    <div class="row">
+      <button class="btn grow" id="r-recal">Kalibruj ponownie</button>
       <button class="btn ghost" id="r-leave">Rozłącz</button>
     </div>
   </section>
 
-  <dialog id="dlg-pair">
-    <div class="dlg-head"><strong id="pair-title">Parowanie</strong><button class="icon" id="pair-cancel" aria-label="Zamknij">✕</button></div>
+  <!-- USTAWIENIA (tylko pod ikoną ⚙) -->
+  <dialog id="dlg-settings" class="sheet">
+    <div class="dlg-head"><strong>Ustawienia</strong><button class="icon-btn" data-close aria-label="Zamknij">✕</button></div>
+    <div class="set-list">
+      <label class="opt-row"><span>Czytaj wyniki na głos</span><input type="checkbox" class="switch" id="s-voice"></label>
+      <label class="opt-row"><span>Blokuj ostrość i ekspozycję po kalibracji</span><input type="checkbox" class="switch" id="s-lock"></label>
+      <div class="opt-row col"><span>Czułość wykrywania <small class="muted" id="s-sens-v"></small></span><input type="range" id="s-sens" min="20" max="62"></div>
+      <button class="btn ghost" id="s-bg">Tarcza pusta – zapamiętaj tło</button>
+      <details class="help"><summary>Jak ustawić telefon?</summary>
+        <p>Statyw z przodu tarczy, pod kątem 30–45°, 1–1,5 m od niej. Cała tarcza w kadrze, równe światło bez cieni. Przy 2 kamerach: telefony z lewej i prawej strony, lekko pod kątem.</p></details>
+      <button class="btn ghost danger" id="s-reset">Wyczyść zapisane dane</button>
+      <p class="muted small center">Dart Licznik · <span class="ver"></span> · działa offline</p>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-menu" class="sheet">
+    <div class="dlg-head"><strong>Gra</strong><button class="icon-btn" data-close aria-label="Zamknij">✕</button></div>
+    <div class="set-list">
+      <button class="btn" id="m-recal">Kalibruj kamerę</button>
+      <button class="btn" id="m-restart">Zacznij tę grę od nowa</button>
+      <button class="btn danger" id="m-end">Zakończ grę</button>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-board" class="sheet">
+    <div class="dlg-head"><strong id="dlg-title">Dotknij miejsce trafienia</strong><button class="icon-btn" data-close aria-label="Zamknij">✕</button></div>
+    <div id="dlg-svg"></div>
+    <div class="row quick"><button class="btn" data-q="0">Pudło</button><button class="btn" data-q="25">25</button><button class="btn" data-q="BULL">Bull</button></div>
+  </dialog>
+
+  <dialog id="dlg-pair" class="sheet">
+    <div class="dlg-head"><strong id="pair-title">Parowanie</strong><button class="icon-btn" id="pair-cancel" aria-label="Zamknij">✕</button></div>
     <p id="pair-step" class="pair-step"></p>
     <canvas id="pair-qr" class="pair-qr" hidden></canvas>
     <video id="pair-video" class="pair-video" playsinline muted hidden></video>
@@ -120,33 +189,13 @@
       <textarea id="pair-text" rows="3" placeholder="Wklej kod parowania (zaczyna się od DART1:)"></textarea>
       <button class="btn" id="pair-text-ok">Użyj kodu</button>
     </div>
-    <div class="row wrap"><button class="btn primary" id="pair-scan" hidden>Skanuj kod z drugiego telefonu</button></div>
+    <button class="btn primary" id="pair-scan" hidden>Skanuj kod z drugiego telefonu</button>
   </dialog>
 
-  <!-- tarcza do ręcznego wpisywania / korekty -->
-  <dialog id="dlg-board">
-    <div class="dlg-head"><strong id="dlg-title">Dotknij miejsce trafienia</strong><button class="icon" data-close aria-label="Zamknij">✕</button></div>
-    <div id="dlg-svg"></div>
-    <div class="row wrap quick">
-      <button class="btn" data-q="0">Pudło</button><button class="btn" data-q="25">25</button><button class="btn" data-q="BULL">Bull</button>
-    </div>
-  </dialog>
-
-  <dialog id="dlg-menu">
-    <div class="dlg-head"><strong>Menu</strong><button class="icon" data-close aria-label="Zamknij">✕</button></div>
-    <div class="menu-list">
-      <button class="btn" id="m-recal">Kalibruj kamerę</button>
-      <button class="btn" id="m-reset">Tarcza pusta – zapamiętaj tło</button>
-      <label class="chk"><input type="checkbox" id="m-voice" checked> Czytaj wyniki na głos</label>
-      <label>Czułość wykrywania <input type="range" id="m-sens" min="12" max="50" value="28"></label>
-      <button class="btn" id="m-new">Nowa gra</button>
-    </div>
-  </dialog>
-
-  <dialog id="dlg-end">
-    <h2 id="end-title"></h2>
+  <dialog id="dlg-end" class="sheet">
+    <h2 id="end-title" class="center"></h2>
     <div id="end-table"></div>
-    <div class="row"><button class="btn primary" id="end-again">Rewanż</button><button class="btn ghost" id="end-new">Nowa gra</button></div>
+    <div class="row"><button class="btn primary grow" id="end-again">Rewanż</button><button class="btn ghost" id="end-new">Nowa gra</button></div>
   </dialog>
 </main>
 <script src="board.js"></script>

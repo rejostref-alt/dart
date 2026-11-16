@@ -41,7 +41,7 @@ Przeglądarka nie pozwala łączyć dwóch telefonów przez Bluetooth. Parowanie
 3. Główny telefon: **Skanuj kod z drugiego telefonu**.
 4. Drugi telefon przechodzi do kalibracji, potem wysyła wykryte rzutki. Główny telefon łączy obie kamery: jeśli ta sama rzutka pojawi się w obu w ciągu 1,5 s, położenie jest uśredniane. Wyniki są widoczne też na drugim telefonie.
 
-Wersja aplikacji jest w nagłówku („wersja 3”). Przy każdej aktualizacji trzeba podbić `VERSION` w `app.js` i `CACHE` w `sw.js`.
+Wersja aplikacji jest w Ustawieniach (ikona ⚙). Przy każdej aktualizacji trzeba podbić `VERSION` w `app.js` i `CACHE` w `sw.js`.
 
 ## Plan dalszy
 - Statystyki graczy, historia meczów.

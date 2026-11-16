@@ -1,5 +1,5 @@
 // Service worker: wszystkie pliki w pamięci telefonu, aplikacja działa bez internetu.
-const CACHE = 'dart-v3';
+const CACHE = 'dart-v4';
 const FILES = ['./', 'index.html', 'styles.css', 'board.js', 'vision.js', 'games.js', 'qr.js', 'pair.js', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

@@ -62,4 +62,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .board-num{fill:#fff;font-size:15px;font-weight:700;text-anchor:middle;dominant-baseline:middle}
 .quick{justify-content:center;margin-top:8px}.quick .btn{flex:1}
 .menu-list{display:grid;gap:10px}
+.pair-step{font-size:16px;line-height:1.45;margin:4px 0 10px}
+.pair-qr{display:block;margin:0 auto 10px;max-width:100%;image-rendering:pixelated;border-radius:8px}
+.pair-video{display:block;width:100%;max-height:50vh;background:#000;border-radius:12px;margin-bottom:10px;object-fit:cover}
+#pair-manual{display:grid;gap:8px;margin-bottom:10px}
+textarea{background:#0f1513;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:14px;width:100%}
+.paired{color:var(--acc);font-weight:700}
 #end-table table{width:100%;border-collapse:collapse;margin:10px 0}#end-table td,#end-table th{padding:8px;border-bottom:1px solid var(--line);text-align:left}

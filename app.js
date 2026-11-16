@@ -4,6 +4,8 @@
   const store = { get(k, d) { try { const v = localStorage.getItem('dart.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
                   set(k, v) { try { localStorage.setItem('dart.' + k, JSON.stringify(v)); } catch {} } };
   const show = (id) => { $$('.screen').forEach(s => s.hidden = s.id !== id); };
+  const VERSION = '3'; // przy każdej aktualizacji podbić też CACHE w sw.js (dart-v3 itd.)
+  $$('.ver').forEach(e => e.textContent = 'wersja ' + VERSION);
 
   // ---------- 1. ustawienia ----------
   let players = store.get('players', ['Gracz 1', 'Gracz 2']), kind = store.get('kind', 'x01');
@@ -99,7 +101,9 @@
     const txt = lock.focus === 'zablokowana' ? '🔒 Ostrość zablokowana' : lock.focus === 'ustawiona raz' ? '🔒 Ostrość ustawiona (bez autofokusu)' : '⚠ Telefon nie pozwala zablokować ostrości';
     $('#cam-lock').textContent = txt + (lock.exposure ? ' · ekspozycja ✓' : '') + (lock.wb ? ' · balans bieli ✓' : '');
     $('#cal-ok').disabled = false;
-    Vision.setCalibration(calPts, vw, vh); startMatch(true);
+    Vision.setCalibration(calPts, vw, vh);
+    if (Pair.role === 'remote' && Pair.connected()) { $('#r-lock').textContent = $('#cam-lock').textContent; return startRemote(); }
+    startMatch(true);
     if (lock.focus === 'brak') setStatus('Ten telefon nie pozwala aplikacji zablokować ostrości – unikaj stania przed kamerą przy wyjmowaniu lotek', 'take');
   };
 
@@ -124,7 +128,7 @@
   $('#go-camera').onclick = openCamera;
   $('#go-manual').onclick = () => startMatch(false);
 
-  function setStatus(t, cls) { const s = $('#status'); s.textContent = t; s.className = 'status' + (cls ? ' ' + cls : ''); }
+  function setStatus(t, cls) { const s = $('#status'); s.textContent = t; s.className = 'status' + (cls ? ' ' + cls : ''); mirror(); }
   function render() {
     const st = match.state;
     $('#g-header').textContent = match.header();
@@ -132,6 +136,10 @@
       <span class="sub">${r.sub}</span>${r.hint ? `<span class="hint">Zejście: ${r.hint}</span>` : ''}</div>`).join('');
     const t = st.turn || [], sum = t.reduce((a, h) => a + h.value, 0);
     $('#slots').innerHTML = [0, 1, 2].map(i => t[i] ? `<div class="slot" data-s="${i}">${t[i].label}</div>` : `<div class="slot empty" data-s="${i}">rzutka ${i + 1}</div>`).join('') + `<div class="slot sum">${sum}</div>`;
+    mirror();
+  }
+  function mirror() { // podgląd wyników na drugiej kamerze
+    if (Pair.role === 'host' && Pair.connected() && match) Pair.send({ t: 'view', rows: match.view(), turn: (match.state.turn || []).map(h => h.label), status: $('#status').textContent });
   }
 
   function addHit(hit, fromCam) {
@@ -159,6 +167,8 @@
     const p = match.state.players[match.state.cur];
     setStatus(`${p.name} – rzucaj!`); say(p.name);
     if (useCam) Vision.resetReference(false);
+    if (pend) { clearTimeout(pend.t); pend = null; }
+    Pair.send({ t: 'reset' }); // druga kamera zapamiętuje pustą tarczę jako tło
   }
 
   function onVision(ev) {
@@ -169,12 +179,32 @@
     if (ev.type === 'dart') {
       pill.textContent = 'Kamera gotowa'; pill.className = 'pill ok';
       if (st && st.awaitNext) { next(); return; } // po pełnej kolejce zmiana obrazu = wyjmowanie lotek
-      turnDarts.push(ev.dart); addHit(ev.dart.score, true);
+      candidate('local', ev.dart.board, ev.dart.img);
     }
     if (ev.type === 'big') {
       if (st && (st.awaitNext || ev.nearEmpty)) { ev.accept(); if (st.awaitNext) next(); turnDarts = []; }
       else { pill.textContent = 'Coś zasłania tarczę'; pill.className = 'pill warn'; }
     }
+  }
+
+  // ---------- łączenie rzutek z dwóch kamer ----------
+  // ta sama rzutka zwykle pojawia się w obu kamerach w odstępie < 1,5 s: wtedy uśredniamy położenie
+  let pend = null;
+  function commitDart(board, img, both) {
+    const score = Board.score(board[0], board[1]);
+    if (!img && Hb2i) img = Vision.apply(Hb2i, board[0], board[1]);
+    turnDarts.push({ img: img || [0, 0], board, score, both });
+    addHit(score, true);
+  }
+  function candidate(src, board, img) {
+    if (!match || match.state.done || match.state.awaitNext) return;
+    if (!Pair.connected() || Pair.role !== 'host') return commitDart(board, img);
+    if (pend && pend.src !== src) {
+      clearTimeout(pend.t); const p = pend; pend = null;
+      return commitDart([(p.board[0] + board[0]) / 2, (p.board[1] + board[1]) / 2], src === 'local' ? img : p.img, true);
+    }
+    if (pend) { clearTimeout(pend.t); const p = pend; pend = null; commitDart(p.board, p.img); }
+    pend = { src, board, img, t: setTimeout(() => { const p = pend; pend = null; if (p) commitDart(p.board, p.img); }, 1500) };
   }
 
   function playLoop() {
@@ -214,7 +244,7 @@
 
   $('#a-manual').onclick = () => openBoard(-1);
   $('#a-miss').onclick = () => addHit(Board.fromLabel('0'), false);
-  $('#a-undo').onclick = () => { match.undo(); turnDarts.pop(); render(); setStatus('Cofnięto'); if (useCam) Vision.resetReference(false); };
+  $('#a-undo').onclick = () => { match.undo(); turnDarts.pop(); render(); setStatus('Cofnięto'); if (useCam) Vision.resetReference(false); Pair.send({ t: 'reset' }); };
   $('#a-next').onclick = next;
   $('#g-menu').onclick = () => $('#dlg-menu').showModal();
   $('#m-recal').onclick = () => { $('#dlg-menu').close(); Vision.stop(); openCamera(); };
@@ -230,6 +260,93 @@
   }
   $('#end-again').onclick = () => { $('#dlg-end').close(); if (useCam) Vision.setCalibration(calPts, vw, vh); startMatch(useCam); };
   $('#end-new').onclick = () => { $('#dlg-end').close(); show('scr-setup'); };
+
+  // ---------- parowanie dwóch telefonów ----------
+  const dlgPair = $('#dlg-pair');
+  function pairState(txt, ok) {
+    $('#pair-state').textContent = txt; $('#pair-state').className = 'small ' + (ok ? 'paired' : 'muted');
+    $('#g-pair').textContent = ok && Pair.role === 'host' ? '🔗 2 kamery' : ''; $('#g-pair').className = 'small paired';
+  }
+  function pairView(step, { qr, scanBtn } = {}) {
+    $('#pair-step').innerHTML = step;
+    $('#pair-qr').hidden = !qr; $('#pair-scan').hidden = !scanBtn; $('#pair-manual').hidden = true; $('#pair-video').hidden = true;
+    if (qr) QR.toCanvas(qr, $('#pair-qr'));
+  }
+  async function readCode() { // skan kodu QR z ekranu drugiego telefonu
+    if (Pair.canScan()) { $('#pair-video').hidden = false; try { return await Pair.scan($('#pair-video')); } finally { $('#pair-video').hidden = true; } }
+    $('#pair-manual').hidden = false;
+    return new Promise(res => { $('#pair-text-ok').onclick = () => res($('#pair-text').value); });
+  }
+  $('#pair-host').onclick = async () => {
+    dlgPair.showModal(); $('#pair-title').textContent = 'Paruj drugi telefon';
+    pairView('Przygotowuję kod… Upewnij się, że oba telefony są w tej samej sieci Wi‑Fi (np. hotspot z jednego z nich).');
+    try {
+      const code = await Pair.host();
+      pairView('<b>Krok 1/2.</b> Na drugim telefonie otwórz aplikację, wybierz <b>„Ten telefon to druga kamera”</b> i zeskanuj ten kod.<br>Gdy drugi telefon pokaże swój kod, naciśnij przycisk poniżej.', { qr: code, scanBtn: true });
+      $('#pair-scan').onclick = async () => {
+        pairView('<b>Krok 2/2.</b> Skieruj aparat na kod wyświetlony na drugim telefonie.');
+        try { await Pair.hostAccept(await readCode()); pairView('Łączę telefony…'); }
+        catch (e) { pairView('Nie udało się: ' + e.message + '. Spróbuj od nowa.'); }
+      };
+    } catch (e) { pairView('Nie udało się przygotować parowania: ' + e.message); }
+  };
+  $('#pair-join').onclick = async () => {
+    dlgPair.showModal(); $('#pair-title').textContent = 'Druga kamera';
+    pairView('<b>Krok 1/2.</b> Skieruj aparat na kod wyświetlony na <b>głównym telefonie</b>.');
+    try {
+      const answer = await Pair.join(await readCode());
+      pairView('<b>Krok 2/2.</b> Pokaż ten kod głównemu telefonowi – tam naciśnij <b>„Skanuj kod z drugiego telefonu”</b>.', { qr: answer });
+    } catch (e) { pairView('Nie udało się: ' + e.message + '. Spróbuj od nowa.'); }
+  };
+  $('#pair-cancel').onclick = () => { Pair.stopScan(); dlgPair.close(); if (!Pair.connected()) Pair.close(); };
+
+  Pair.on((m) => {
+    if (Pair.role === 'host') { if (m.t === 'dart' && match && !$('#scr-play').hidden) candidate('remote', m.b, null); return; }
+    if (m.t === 'reset') { Vision.resetReference(false); remoteDarts = []; }
+    if (m.t === 'view') renderRemoteView(m);
+  }, (s) => {
+    if (s === 'connected') {
+      Pair.stopScan(); dlgPair.close();
+      if (Pair.role === 'host') { pairState('🔗 Druga kamera połączona', true); mirror(); }
+      else { pairState('🔗 Połączono z głównym telefonem', true); openCamera(); }
+    } else {
+      pairState('Rozłączono – sparuj ponownie', false);
+      $('#r-conn').textContent = 'Rozłączono'; $('#r-conn').className = 'pill warn';
+    }
+  });
+
+  // tryb drugiej kamery: wykrywa rzutki i wysyła je do głównego telefonu
+  let remoteDarts = [];
+  const rc = $('#remote-canvas'), rctx = rc.getContext('2d');
+  function startRemote() {
+    show('scr-remote'); $('#r-conn').textContent = 'Połączono'; $('#r-conn').className = 'pill ok';
+    Vision.start(onRemoteVision); remoteLoop();
+  }
+  function onRemoteVision(ev) {
+    const pill = $('#r-cam');
+    if (ev.type === 'ready' || ev.type === 'clear') { pill.textContent = 'Kamera gotowa'; pill.className = 'pill ok'; }
+    if (ev.type === 'moving') { pill.textContent = 'Ruch…'; pill.className = 'pill warn'; }
+    if (ev.type === 'dart') { remoteDarts.push(ev.dart); Pair.send({ t: 'dart', b: ev.dart.board, ts: Date.now() }); $('#r-status').textContent = 'Wysłano: ' + ev.dart.score.label; pill.textContent = 'Kamera gotowa'; pill.className = 'pill ok'; }
+    if (ev.type === 'big') ev.accept(); // o kolejce decyduje główny telefon
+  }
+  function remoteLoop() {
+    if ($('#scr-remote').hidden) return;
+    const r = rc.getBoundingClientRect(); rc.width = r.width * devicePixelRatio; rc.height = r.height * devicePixelRatio;
+    rctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    const f = fit(r.width, r.height); rctx.fillStyle = '#000'; rctx.fillRect(0, 0, r.width, r.height);
+    if (video.readyState >= 2) rctx.drawImage(video, f.ox, f.oy, vw * f.s, vh * f.s);
+    if (Hb2i) drawWire(rctx, Hb2i, f, 0.45);
+    remoteDarts.slice(-3).forEach(d => { const x = f.ox + d.img[0] * f.s, y = f.oy + d.img[1] * f.s;
+      rctx.beginPath(); rctx.arc(x, y, 7, 0, 7); rctx.fillStyle = '#2f7fe2'; rctx.fill(); rctx.strokeStyle = '#fff'; rctx.lineWidth = 2; rctx.stroke();
+      rctx.fillStyle = '#fff'; rctx.font = 'bold 13px system-ui'; rctx.fillText(d.score.label, x + 10, y - 8); });
+    requestAnimationFrame(remoteLoop);
+  }
+  function renderRemoteView(m) {
+    $('#r-board').innerHTML = (m.rows || []).map(r => `<div class="ps${r.active ? ' active' : ''}"><span class="nm">${r.name}</span><span class="big">${r.big}</span><span class="sub">${r.sub}</span></div>`).join('');
+    $('#r-status').textContent = (m.status || '') + (m.turn && m.turn.length ? ' · ' + m.turn.join(' ') : '');
+  }
+  $('#r-recal').onclick = () => { Vision.stop(); openCamera(); };
+  $('#r-leave').onclick = () => { Vision.stop(); Pair.close(); pairState('Nie sparowano', false); show('scr-setup'); };
 
   // ekran nie gaśnie w trakcie gry
   let wake = null;

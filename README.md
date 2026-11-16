@@ -34,7 +34,15 @@ Po pierwszym otwarciu z internetu działa w pełni offline: można ją zainstalo
 Kamera i tryb offline w przeglądarce wymagają adresu **https**, więc pliki trzeba raz wrzucić na hosting HTTPS, np. GitHub Pages.
 Potem w Chrome na telefonie otwórz adres i wybierz **Dodaj do ekranu głównego**. Od tej chwili aplikacja działa bez internetu.
 
+## Dwa telefony (druga kamera)
+Przeglądarka nie pozwala łączyć dwóch telefonów przez Bluetooth. Parowanie działa więc przez **wspólne Wi‑Fi bez internetu**: jeden telefon włącza hotspot, drugi się z nim łączy. Telefony wymieniają się danymi połączenia przez **kody QR** (WebRTC, dane idą bezpośrednio między telefonami).
+1. Główny telefon: **Paruj drugi telefon**. Pokaże się kod QR.
+2. Drugi telefon: **Ten telefon to druga kamera**. Zeskanuj kod z głównego, a drugi telefon pokaże swój kod.
+3. Główny telefon: **Skanuj kod z drugiego telefonu**.
+4. Drugi telefon przechodzi do kalibracji, potem wysyła wykryte rzutki. Główny telefon łączy obie kamery: jeśli ta sama rzutka pojawi się w obu w ciągu 1,5 s, położenie jest uśredniane. Wyniki są widoczne też na drugim telefonie.
+
+Wersja aplikacji jest w nagłówku („wersja 3”). Przy każdej aktualizacji trzeba podbić `VERSION` w `app.js` i `CACHE` w `sw.js`.
+
 ## Plan dalszy
-- Parowanie dwóch telefonów (lewa i prawa kamera) przez hotspot bez internetu, z kodem QR. Lepsza dokładność przy rzutkach blisko siebie.
 - Statystyki graczy, historia meczów.
 - Dodatkowe gry (Killer, Bob's 27).

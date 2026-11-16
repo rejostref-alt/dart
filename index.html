@@ -14,7 +14,7 @@
 
   <!-- 1. USTAWIENIA GRY -->
   <section id="scr-setup" class="screen">
-    <header class="top"><h1>🎯 Dart Licznik</h1><span class="muted small">działa offline</span></header>
+    <header class="top"><h1>🎯 Dart Licznik</h1><span class="muted small ver"></span></header>
     <div class="card">
       <h2>Gracze</h2>
       <div id="players"></div>
@@ -47,6 +47,15 @@
       </div>
       <div id="opts-cricket" class="opts" hidden><p class="muted small">Pola 15–20 i bull. Zamknij wszystkie i miej co najmniej tyle punktów, co rywale.</p></div>
     </div>
+    <div class="card">
+      <h2>Druga kamera <span class="muted small">(opcjonalnie)</span></h2>
+      <p class="muted small">Dwa telefony na jednej tarczy: lewy i prawy, pod lekkim kątem. Oba muszą być w tej samej sieci Wi‑Fi – wystarczy hotspot z jednego telefonu, internet nie jest potrzebny.</p>
+      <div class="row wrap">
+        <button class="btn" id="pair-host">Paruj drugi telefon</button>
+        <button class="btn ghost" id="pair-join">Ten telefon to druga kamera</button>
+      </div>
+      <p id="pair-state" class="small muted">Nie sparowano</p>
+    </div>
     <div class="row">
       <button class="btn primary" id="go-camera">Dalej: kamera →</button>
       <button class="btn ghost" id="go-manual">Graj bez kamery</button>
@@ -72,7 +81,7 @@
 
   <!-- 3. GRA -->
   <section id="scr-play" class="screen" hidden>
-    <header class="top"><div><h2 id="g-title"></h2><span id="g-header" class="muted small"></span></div>
+    <header class="top"><div><h2 id="g-title"></h2><span id="g-header" class="muted small"></span> <span id="g-pair" class="small"></span> <span class="muted small ver"></span></div>
       <button class="icon" id="g-menu" aria-label="Menu">⋯</button></header>
     <div class="play-grid">
       <div class="stage small" id="play-stage"><canvas id="play-canvas"></canvas><span id="cam-state" class="pill">Kamera</span><span id="cam-lock" class="pill lock"></span></div>
@@ -89,6 +98,30 @@
       <button class="btn primary" id="a-next">Następny gracz →</button>
     </div>
   </section>
+
+  <!-- 4. DRUGA KAMERA (tryb pomocniczy) -->
+  <section id="scr-remote" class="screen" hidden>
+    <header class="top"><div><h2>📷 Druga kamera</h2><span class="muted small ver"></span></div><span id="r-conn" class="pill ok" style="position:static">Połączono</span></header>
+    <div class="stage small" id="remote-stage"><canvas id="remote-canvas"></canvas><span id="r-cam" class="pill">Kamera</span><span id="r-lock" class="pill lock"></span></div>
+    <div id="r-status" class="status">Wysyłam rzutki do głównego telefonu</div>
+    <div id="r-board" class="scores"></div>
+    <div class="row wrap actions">
+      <button class="btn" id="r-recal">Kalibruj ponownie</button>
+      <button class="btn ghost" id="r-leave">Rozłącz</button>
+    </div>
+  </section>
+
+  <dialog id="dlg-pair">
+    <div class="dlg-head"><strong id="pair-title">Parowanie</strong><button class="icon" id="pair-cancel" aria-label="Zamknij">✕</button></div>
+    <p id="pair-step" class="pair-step"></p>
+    <canvas id="pair-qr" class="pair-qr" hidden></canvas>
+    <video id="pair-video" class="pair-video" playsinline muted hidden></video>
+    <div id="pair-manual" hidden>
+      <textarea id="pair-text" rows="3" placeholder="Wklej kod parowania (zaczyna się od DART1:)"></textarea>
+      <button class="btn" id="pair-text-ok">Użyj kodu</button>
+    </div>
+    <div class="row wrap"><button class="btn primary" id="pair-scan" hidden>Skanuj kod z drugiego telefonu</button></div>
+  </dialog>
 
   <!-- tarcza do ręcznego wpisywania / korekty -->
   <dialog id="dlg-board">
@@ -119,6 +152,8 @@
 <script src="board.js"></script>
 <script src="vision.js"></script>
 <script src="games.js"></script>
+<script src="qr.js"></script>
+<script src="pair.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

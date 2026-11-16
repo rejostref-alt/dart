@@ -3,7 +3,7 @@
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
   const store = { get(k, d) { try { const v = localStorage.getItem('dart.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
                   set(k, v) { try { localStorage.setItem('dart.' + k, JSON.stringify(v)); } catch {} } };
-  const VERSION = '12'; // przy każdej aktualizacji podbić też CACHE w sw.js
+  const VERSION = '13'; // przy każdej aktualizacji podbić też CACHE w sw.js
   const GEAR = $('[data-settings] svg').outerHTML;
   $$('[data-settings]').forEach(b => { b.innerHTML = GEAR; b.onclick = openSettings; });
   let screen = 'scr-home';
@@ -20,8 +20,9 @@
   document.addEventListener('pointerdown', () => Caller.unlock(), { once: true }); // dźwięk wolno włączyć dopiero po dotknięciu
 
   // ---------- ustawienia (tylko pod ikoną ⚙) ----------
-  const settings = Object.assign({ voice: true, lock: true, sens: 50, crowd: true, each: 'pts', caller: '', lang: I18N.lang }, store.get('settings', {}));
+  const settings = Object.assign({ voice: true, lock: true, sens: 50, crowd: false, each: 'pts', caller: '', lang: I18N.lang }, store.get('settings', {}));
   if (typeof settings.each !== 'string') settings.each = 'pts'; // v10 miało przełącznik true/false
+  if (!settings.v13) { settings.crowd = false; settings.caller = ''; settings.v13 = 1; } // v13: efekt hali (szum) wyłączony, domyślny głos telefonu
   const applySettings = () => {
     Vision.cfg.diffThr = 78 - settings.sens; I18N.lang = settings.lang;
     Caller.set({ on: settings.voice, crowd: settings.crowd, voiceName: settings.caller });
@@ -33,7 +34,7 @@
     $('#s-caller').innerHTML = `<option value="">${esc(t('sAuto'))}</option>` + vs.map(v => `<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('');
     $('#s-caller').value = vs.some(v => v.name === settings.caller) ? settings.caller : '';
     // jeden głos = lista nic nie daje, głos męski wybiera się w Androidzie → zamiast listy wskazówka
-    $('#s-voice-hint').hidden = !settings.voice || vs.length > 1;
+    $('#s-voice-hint').hidden = true;
     $('#s-caller-row').hidden = !settings.voice || vs.length <= 1;
   }
   function openSettings() {

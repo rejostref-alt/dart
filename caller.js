@@ -14,7 +14,7 @@ const Caller = (() => {
   function pick(lang) {
     const vs = list(lang); if (!vs.length) return null;
     if (opts.voiceName) { const v = vs.find(v => v.name === opts.voiceName); if (v) return v; }
-    return vs.find(v => MALE.test(v.name) && !/female/i.test(v.name)) || vs.find(v => !FEMALE.test(v.name) && v.lang.toLowerCase().replace('_', '-') === lang.toLowerCase()) || vs.find(v => !FEMALE.test(v.name)) || vs[0];
+    return null; // domyślny głos telefonu (jak w wersji 9)
   }
   // naturalny ton (pitch 1) – sztuczne obniżanie brzmiało jak dziecko; parts = [[tekst, tempo], ...] mówione po kolei
   function speak(parts, { cut = false } = {}) {
@@ -71,7 +71,7 @@ const Caller = (() => {
   return {
     set(o) { Object.assign(opts, o); },
     voicesFor: (lang) => list(lang),
-    unlock() { ac(); }, // po pierwszym dotknięciu (wymóg przeglądarek)
+    unlock() { if (opts.crowd) ac(); }, // kanał audio otwierany tylko z włączonym efektem hali (otwarty kanał potrafi szumieć)
     say: (txt) => speak(txt),
     // każda rzutka: liczba punktów (T20 → „60”) albo nazwa pola (T20 → „potrójne 20”)
     dart(h, mode) {

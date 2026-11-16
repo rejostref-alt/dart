@@ -16,14 +16,14 @@ const Caller = (() => {
     if (opts.voiceName) { const v = vs.find(v => v.name === opts.voiceName); if (v) return v; }
     return vs.find(v => MALE.test(v.name) && !/female/i.test(v.name)) || vs.find(v => !FEMALE.test(v.name) && v.lang.toLowerCase().replace('_', '-') === lang.toLowerCase()) || vs.find(v => !FEMALE.test(v.name)) || vs[0];
   }
-  // pitch nisko + wolniej = „sędziowski” ton; parts = [[tekst, rate, pitch], ...] mówione jedno po drugim
-  function speak(parts, { cut = true } = {}) {
+  // naturalny ton (pitch 1) – sztuczne obniżanie brzmiało jak dziecko; parts = [[tekst, tempo], ...] mówione po kolei
+  function speak(parts, { cut = false } = {}) {
     if (!opts.on || !S) return;
     if (cut) S.cancel();
     const lang = I18N.speechLang(), v = pick(lang);
     for (const p of [].concat(typeof parts === 'string' ? [[parts]] : parts)) {
       const u = new SpeechSynthesisUtterance(p[0]); u.lang = v ? v.lang : lang; if (v) u.voice = v;
-      u.rate = p[1] || 0.9; u.pitch = p[2] || 0.7; u.volume = 1; S.speak(u);
+      u.rate = p[1] || 1; u.pitch = 1; u.volume = 1; S.speak(u);
     }
   }
 
@@ -73,21 +73,27 @@ const Caller = (() => {
     voicesFor: (lang) => list(lang),
     unlock() { ac(); }, // po pierwszym dotknięciu (wymóg przeglądarek)
     say: (txt) => speak(txt),
-    hit(h) { speak(h.mult === 0 ? t('cMiss') : h.num === 25 ? (h.mult === 2 ? t('cBull') : t('c25')) : (h.mult === 3 ? t('cT') : h.mult === 2 ? t('cD') : '') + h.num); },
-    // suma kolejki: 180 przeciągnięte, 100+ z naciskiem, 0 = „no score”
+    // każda rzutka: liczba punktów (T20 → „60”) albo nazwa pola (T20 → „potrójne 20”)
+    dart(h, mode) {
+      if (mode === 'off') return;
+      if (h.mult === 0) return speak(t('cMiss'));
+      if (mode === 'field') return speak(h.num === 25 ? (h.mult === 2 ? t('cBull') : t('c25')) : (h.mult === 3 ? t('cT') : h.mult === 2 ? t('cD') : '') + h.num);
+      speak(String(h.value));
+    },
+    // suma kolejki po 3 lotkach (w kolejce po ostatniej rzutce): 180 przeciągnięte, 0 = „bez punktów”
     score(n) {
-      if (n === 180) { speak([[t('c180a'), 0.82, 0.62], [t('c180b'), 0.55, 0.58]]); return crowd('big'); }
-      if (n === 0) return speak([[t('cNoScore'), 0.85, 0.65]]);
-      speak([[String(n) + (n >= 100 ? '!' : ''), n >= 100 ? 0.7 : 0.88, n >= 100 ? 0.62 : 0.7]]);
+      if (n === 180) { speak([[t('c180a'), 0.9], [t('c180b'), 0.7]]); return crowd('big'); }
+      if (n === 0) return speak([[t('cNoScore'), 0.95]]);
+      speak([[t('cTotal', { n }), n >= 100 ? 0.85 : 0.95]]);
       crowd(n >= 100 ? 'ton' : n >= 60 ? 'nice' : '');
     },
-    bust() { speak([[t('cBust'), 0.8, 0.6]]); crowd('ooh'); },
-    gameOn(name) { speak([[t('cGameOn'), 0.75, 0.6], [name, 0.85, 0.68]]); },
-    require(name, rest) { speak([[t('cRequire', { n: name, x: rest }), 0.85, 0.66]], { cut: false }); },
-    player(name) { speak([[name, 0.88, 0.68]], { cut: false }); },
-    leg(name) { speak([[t('cLeg', { n: name }), 0.72, 0.6]]); crowd('leg'); },
-    match(name) { speak([[t('cMatch', { n: name }), 0.68, 0.58]]); crowd('big'); },
-    wins(name) { speak([[t('cWins', { n: name }), 0.72, 0.6]]); crowd('big'); },
-    test() { this.unlock(); speak([[t('c180a'), 0.82, 0.62], [t('c180b'), 0.55, 0.58]]); crowd('big'); }
+    bust() { speak([[t('cBust'), 0.9]]); crowd('ooh'); },
+    gameOn(name) { speak([[t('cGameOn'), 0.9], [name, 0.95]], { cut: true }); },
+    require(name, rest) { speak([[t('cRequire', { n: name, x: rest }), 0.95]]); },
+    player(name) { speak([[name, 0.95]]); },
+    leg(name) { speak([[t('cLeg', { n: name }), 0.9]]); crowd('leg'); },
+    match(name) { speak([[t('cMatch', { n: name }), 0.88]]); crowd('big'); },
+    wins(name) { speak([[t('cWins', { n: name }), 0.9]]); crowd('big'); },
+    test() { this.unlock(); speak([['60', 1], ['60', 1], ['20', 1], [t('cTotal', { n: 140 }), 0.85]], { cut: true }); crowd('ton'); }
   };
 })();

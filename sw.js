@@ -1,5 +1,5 @@
 // Service worker: wszystkie pliki w pamięci telefonu, aplikacja działa bez internetu.
-const CACHE = 'dart-v11';
+const CACHE = 'dart-v12';
 const FILES = ['./', 'index.html', 'styles.css', 'i18n.js', 'caller.js', 'board.js', 'vision.js', 'games.js', 'qr.js', 'pair.js', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 // cache: 'reload' – zawsze świeże pliki z serwera, nie z pamięci przeglądarki (inaczej aktualizacja mogła zapisać stary app.js)
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting())); });

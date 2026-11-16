@@ -3,7 +3,7 @@
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
   const store = { get(k, d) { try { const v = localStorage.getItem('dart.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
                   set(k, v) { try { localStorage.setItem('dart.' + k, JSON.stringify(v)); } catch {} } };
-  const VERSION = '11'; // przy każdej aktualizacji podbić też CACHE w sw.js
+  const VERSION = '12'; // przy każdej aktualizacji podbić też CACHE w sw.js
   const GEAR = $('[data-settings] svg').outerHTML;
   $$('[data-settings]').forEach(b => { b.innerHTML = GEAR; b.onclick = openSettings; });
   let screen = 'scr-home';
@@ -20,7 +20,8 @@
   document.addEventListener('pointerdown', () => Caller.unlock(), { once: true }); // dźwięk wolno włączyć dopiero po dotknięciu
 
   // ---------- ustawienia (tylko pod ikoną ⚙) ----------
-  const settings = Object.assign({ voice: true, lock: true, sens: 50, crowd: true, each: false, caller: '', lang: I18N.lang }, store.get('settings', {}));
+  const settings = Object.assign({ voice: true, lock: true, sens: 50, crowd: true, each: 'pts', caller: '', lang: I18N.lang }, store.get('settings', {}));
+  if (typeof settings.each !== 'string') settings.each = 'pts'; // v10 miało przełącznik true/false
   const applySettings = () => {
     Vision.cfg.diffThr = 78 - settings.sens; I18N.lang = settings.lang;
     Caller.set({ on: settings.voice, crowd: settings.crowd, voiceName: settings.caller });
@@ -31,22 +32,26 @@
     const vs = Caller.voicesFor(I18N.speechLang());
     $('#s-caller').innerHTML = `<option value="">${esc(t('sAuto'))}</option>` + vs.map(v => `<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('');
     $('#s-caller').value = vs.some(v => v.name === settings.caller) ? settings.caller : '';
+    // jeden głos = lista nic nie daje, głos męski wybiera się w Androidzie → zamiast listy wskazówka
+    $('#s-voice-hint').hidden = !settings.voice || vs.length > 1;
+    $('#s-caller-row').hidden = !settings.voice || vs.length <= 1;
   }
   function openSettings() {
     $$('#s-lang button').forEach(b => b.classList.toggle('on', b.dataset.v === settings.lang));
-    $('#s-voice').checked = settings.voice; $('#s-crowd').checked = settings.crowd; $('#s-each').checked = settings.each;
+    $('#s-voice').checked = settings.voice; $('#s-crowd').checked = settings.crowd;
+    $$('#s-each button').forEach(b => b.classList.toggle('on', b.dataset.v === settings.each));
     $('#s-lock').checked = settings.lock; $('#s-sens').value = settings.sens; $('#s-sens-v').textContent = sensLabel();
-    $('#s-caller-row').hidden = !settings.voice; fillVoices();
+    fillVoices();
     $('#s-bg').hidden = screen !== 'scr-play' || !useCam;
     $('#dlg-settings').showModal();
   }
   if (window.speechSynthesis) speechSynthesis.addEventListener && speechSynthesis.addEventListener('voiceschanged', () => { if ($('#dlg-settings').open) fillVoices(); });
   $('#s-lang').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; settings.lang = b.dataset.v; applySettings(); relabel(); openSettings(); };
-  $('#s-voice').onchange = (e) => { settings.voice = e.target.checked; $('#s-caller-row').hidden = !settings.voice; applySettings(); };
+  $('#s-voice').onchange = (e) => { settings.voice = e.target.checked; applySettings(); fillVoices(); };
   $('#s-caller').onchange = (e) => { settings.caller = e.target.value; applySettings(); Caller.test(); };
   $('#s-test').onclick = () => Caller.test();
   $('#s-crowd').onchange = (e) => { settings.crowd = e.target.checked; applySettings(); };
-  $('#s-each').onchange = (e) => { settings.each = e.target.checked; applySettings(); };
+  $('#s-each').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; settings.each = b.dataset.v; applySettings(); $$('#s-each button').forEach(x => x.classList.toggle('on', x === b)); };
   $('#s-lock').onchange = (e) => { settings.lock = e.target.checked; applySettings(); };
   $('#s-sens').oninput = (e) => { settings.sens = +e.target.value; $('#s-sens-v').textContent = sensLabel(); applySettings(); };
   $('#s-bg').onclick = () => { Vision.resetReference(true); $('#dlg-settings').close(); setStatus(t('bgSaved')); };
@@ -344,7 +349,7 @@
     if (!match || match.state.done) return;
     if (match.state.awaitNext) { setStatus(t(useCam ? 'pullOrNext' : 'pressNext'), 'take'); return; }
     const r = match.dart(hit); if (!r) return;
-    if (settings.each && !r.turnOver) Caller.hit(hit);
+    Caller.dart(hit, settings.each); // punkty każdej rzutki – od razu wiadomo, czy odczyt jest dobry
     render(); afterDart(r);
   }
   function afterDart(r) {
@@ -355,7 +360,7 @@
     if (r.turnOver) {
       const p = t('pts', { n: sum });
       setStatus(useCam ? t('pullDarts', { x: p }) : t('enterNext', { x: p }), 'take');
-      if (st.kind === 'x01' || st.kind === 'high' || st.kind === 'shanghai') Caller.score(sum); else if (settings.each) Caller.hit(st.turn[st.turn.length - 1]);
+      Caller.score(sum); // po 3 lotkach: łączna liczba punktów
       return;
     }
     setStatus(r.msg || t('dartOf', { n: curName(), d: st.turn.length + 1 }));
@@ -468,6 +473,7 @@
       if (editSlot < 0) { if (hit) addHit(hit); return; }
       const st = match.state, n = st.turn.length, idx = turnDarts.length - n + editSlot;
       const r = match.replaceAt(editSlot, hit); if (!r) return;
+      if (hit) Caller.dart(hit, settings.each);
       if (useCam && idx >= 0 && turnDarts[idx]) { if (hit) turnDarts[idx].score = hit; else turnDarts.splice(idx, 1); }
       render(); afterDart(r); if (!hit) setStatus(t('removed'));
     }

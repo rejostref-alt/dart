@@ -172,8 +172,9 @@
       <label class="opt-row"><span data-i18n="sVoice"></span><input type="checkbox" class="switch" id="s-voice"></label>
       <div class="opt-row" id="s-caller-row"><span data-i18n="sCaller"></span>
         <span class="caller-pick"><select id="s-caller"></select><button class="icon-btn play" id="s-test" data-i18n-aria="sTest">▶</button></span></div>
+      <p class="small muted voice-hint" id="s-voice-hint" data-i18n="sVoiceHint" hidden></p>
       <label class="opt-row"><span data-i18n="sCrowd"></span><input type="checkbox" class="switch" id="s-crowd"></label>
-      <label class="opt-row"><span data-i18n="sEach"></span><input type="checkbox" class="switch" id="s-each"></label>
+      <div class="opt-row"><span data-i18n="sEach"></span><div class="seg" id="s-each"><button data-v="pts" data-i18n="eachPts"></button><button data-v="field" data-i18n="eachField"></button><button data-v="off" data-i18n="eachOff"></button></div></div>
       <label class="opt-row"><span data-i18n="sLock"></span><input type="checkbox" class="switch" id="s-lock"></label>
       <div class="opt-row col"><span><span data-i18n="sSens"></span> <small class="muted" id="s-sens-v"></small></span><input type="range" id="s-sens" min="20" max="62"></div>
       <button class="btn ghost" id="s-bg" data-i18n="sBg"></button>

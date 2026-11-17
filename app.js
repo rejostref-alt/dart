@@ -3,7 +3,7 @@
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
   const store = { get(k, d) { try { const v = localStorage.getItem('dart.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
                   set(k, v) { try { localStorage.setItem('dart.' + k, JSON.stringify(v)); } catch {} } };
-  const VERSION = '13'; // przy każdej aktualizacji podbić też CACHE w sw.js
+  const VERSION = '14'; // przy każdej aktualizacji podbić też CACHE w sw.js
   const GEAR = $('[data-settings] svg').outerHTML;
   $$('[data-settings]').forEach(b => { b.innerHTML = GEAR; b.onclick = openSettings; });
   let screen = 'scr-home';
@@ -219,9 +219,33 @@
 
   function fit(boxW, boxH) { const s = Math.min(boxW / vw, boxH / vh); return { s, ox: (boxW - vw * s) / 2, oy: (boxH - vh * s) / 2 }; }
   function toVideo(ev) { const r = ov.getBoundingClientRect(), f = fit(r.width, r.height); return [(ev.clientX - r.left - f.ox) / f.s, (ev.clientY - r.top - f.oy) / f.s]; }
+  // automatyczne wykrywanie tarczy (autocal.js): kilka prób po kilka klatek, najlepsze dopasowanie
+  let autoState = '', autoQ = 0, autoTimer = null, autoGen = 0;
+  const wait = (ms) => new Promise(r => { autoTimer = setTimeout(r, ms); });
+  function stopAuto() { autoGen++; clearTimeout(autoTimer); autoTimer = null; if (autoState === 'searching') autoState = ''; }
+  async function autoDetect(tries) {
+    stopAuto(); const gen = autoGen; autoState = 'searching'; calMsg();
+    for (let k = 0; k < tries; k++) {
+      let best = null;
+      for (let f = 0; f < 3; f++) {
+        if (f) await wait(250);
+        if (gen !== autoGen || !cameraOn || screen !== 'scr-camera' || !vw) return;
+        let res = null; try { res = AutoCal.detect(video, vw, vh); } catch (e) { console.warn('autocal', e); }
+        if (res && (!best || res.quality > best.quality)) best = res;
+      }
+      if (best && best.quality >= 0.7) { calPts = best.pts; autoQ = best.quality; autoState = 'found'; recomputeH(); calMsg(); return; }
+      await wait(1000);
+      if (gen !== autoGen) return;
+    }
+    autoState = calPts.length === 4 ? '' : 'notfound'; calMsg();
+  }
   function calMsg() {
-    if (calPts.length < 4) $('#cal-msg').innerHTML = t('calStep', { n: calPts.length + 1, x: t(CAL_KEYS[calPts.length]) });
+    if (autoState === 'searching') $('#cal-msg').innerHTML = t('calSearching');
+    else if (autoState === 'found' && calPts.length === 4) $('#cal-msg').innerHTML = t('calFound', { q: Math.round(autoQ * 100) });
+    else if (autoState === 'notfound' && !calPts.length) $('#cal-msg').innerHTML = t('calNotFound');
+    else if (calPts.length < 4) $('#cal-msg').innerHTML = t('calStep', { n: calPts.length + 1, x: t(CAL_KEYS[calPts.length]) });
     else $('#cal-msg').innerHTML = t('calDone');
+    $('#cal-rot').hidden = calPts.length < 4;
     $('#cal-ok').disabled = calPts.length < 4;
     $('#cal-ok').textContent = calMode === 'remote' ? t('calStartRemote') : t('startGame');
   }
@@ -249,6 +273,7 @@
   }
   ov.addEventListener('pointerdown', (e) => {
     if (!vw) return; const p = toVideo(e);
+    stopAuto(); autoState = '';   // ręczne zaznaczanie / poprawianie – automat nie nadpisuje
     if (calPts.length < 4) { calPts.push(p); recomputeH(); calMsg(); return; }
     const r = ov.getBoundingClientRect(), f = fit(r.width, r.height);
     let best = -1, bd = 44 / f.s; calPts.forEach((q, i) => { const d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (d < bd) { bd = d; best = i; } });
@@ -265,12 +290,20 @@
       const saved = store.get('cal', null);
       calPts = saved && saved.vw === vw && saved.vh === vh ? saved.pts : [];
       recomputeH(); calMsg(); requestWake(); calLoop();
+      autoTimer = setTimeout(() => autoDetect(8), 1200);   // chwila na autofokus, potem samo szuka tarczy
     } catch (err) {
       $('#cal-msg').innerHTML = t('camDenied', { x: esc(err.message) });
     }
   }
-  $('#cal-reset').onclick = () => { calPts = []; recomputeH(); calMsg(); };
+  $('#cal-reset').onclick = () => { stopAuto(); autoState = ''; calPts = []; recomputeH(); calMsg(); };
+  $('#cal-auto').onclick = () => autoDetect(3);
+  $('#cal-rot').onclick = () => { // numeracja o 36° (kolory pól muszą się zgadzać, więc tylko co 2 pola)
+    if (calPts.length < 4) return; stopAuto();
+    const a = 36 * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+    calPts = Board.CAL.map(p => Vision.apply(Hb2i, p.x * c - p.y * s, p.x * s + p.y * c)); recomputeH(); calMsg();
+  };
   $('#cal-back').onclick = async () => {
+    stopAuto();
     if (calMode === 'remote') { Pair.close(); return home(); }
     if (keepMatch && match) { // wróć do trwającej gry bez zmiany kalibracji
       keepMatch = false;
@@ -280,6 +313,7 @@
     wizard(2);
   };
   $('#cal-ok').onclick = async () => {
+    stopAuto();
     store.set('cal', { vw, vh, pts: calPts });
     $('#cal-ok').disabled = true;
     if (settings.lock) $('#cal-msg').textContent = t('locking');
